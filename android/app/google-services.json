@@ -1,0 +1,67 @@
+{
+  "project_info": {
+    "project_number": "468169948254",
+    "project_id": "cap-puj-dispatch",
+    "storage_bucket": "cap-puj-dispatch.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:468169948254:android:bb2829907f2d281b57c8cf",
+        "android_client_info": {
+          "package_name": "com.example.puj_dispatch_system"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB6CtWb8AlhQSE-vQrxKwv4B0dOSAuCgzU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:468169948254:android:03a77e94b55231ce57c8cf",
+        "android_client_info": {
+          "package_name": "com.example.puj_dispatch_system.commuter"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB6CtWb8AlhQSE-vQrxKwv4B0dOSAuCgzU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:468169948254:android:ec87db617ffd470b57c8cf",
+        "android_client_info": {
+          "package_name": "com.example.puj_dispatch_system.staff"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB6CtWb8AlhQSE-vQrxKwv4B0dOSAuCgzU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
