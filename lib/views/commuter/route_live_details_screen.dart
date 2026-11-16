@@ -44,6 +44,7 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
   static const double _zoomVisibilityThreshold = 13.0;
 
   final MapController _mapController = MapController();
+  final DraggableScrollableController _sheetController = DraggableScrollableController();
   final ValueNotifier<bool> _showMarkerTags = ValueNotifier<bool>(true);
   final Distance _distance = const Distance();
 
@@ -150,6 +151,7 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
     _frameTicker.dispose();
     _animationFrame.dispose();
     _showMarkerTags.dispose();
+    _sheetController.dispose();
     super.dispose();
   }
 
@@ -1400,6 +1402,37 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
     );
   }
 
+  // Tapping a jeepney in the En-Route / Arriving lists: collapse the bottom
+  // sheet and zoom the map onto that jeepney's dot (no details modal).
+  void _focusVehicleOnMap(String id, Map<String, dynamic>? data) {
+    final loc = data?['location'];
+    final lat = loc is Map ? loc['latitude'] : null;
+    final lng = loc is Map ? loc['longitude'] : null;
+
+    if (lat is! num || lng is! num) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No GPS location for this jeepney yet.')),
+      );
+      return;
+    }
+
+    AppTypography.lightFeedback();
+
+    // Shrink the sheet so the dot is visible instead of hidden behind it.
+    if (_sheetController.isAttached) {
+      _sheetController.animateTo(
+        0.16,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    }
+
+    final target = LatLng(lat.toDouble(), lng.toDouble());
+    final zoom = _currentZoom < 16.5 ? 16.5 : _currentZoom;
+    _mapController.move(target, zoom);
+  }
+
   Widget _buildEnRouteSection(List<QueryDocumentSnapshot> enRouteDocs) {
     final s = _s;
     return Column(
@@ -1459,14 +1492,7 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
             return Container(
               margin: EdgeInsets.only(bottom: 8 * s),
               child: InkWell(
-                onTap: () {
-                  _showVehicleDetailsModal(
-                    context: context,
-                    vehicleId: doc.id,
-                    showSpeed: true,
-                    initialData: data,
-                  );
-                },
+                onTap: () => _focusVehicleOnMap(doc.id, data),
                 borderRadius: BorderRadius.circular(10 * s),
                 child: Container(
                   padding: EdgeInsets.symmetric(horizontal: 10 * s, vertical: 9 * s),
@@ -1789,12 +1815,7 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
           return Container(
             margin: EdgeInsets.only(bottom: 8 * s),
             child: InkWell(
-              onTap: () => _showVehicleDetailsModal(
-                context: context,
-                vehicleId: doc.id,
-                showSpeed: true,
-                initialData: data,
-              ),
+              onTap: () => _focusVehicleOnMap(doc.id, data),
               borderRadius: BorderRadius.circular(10 * s),
               child: Container(
                 padding: EdgeInsets.symmetric(horizontal: 10 * s, vertical: 9 * s),
@@ -2800,6 +2821,7 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
             final approachDocs = allDocs.where(_isApproaching).toList();
 
             return DraggableScrollableSheet(
+              controller: _sheetController,
               initialChildSize: 0.38,
               minChildSize: 0.16,
               maxChildSize: 0.88,
