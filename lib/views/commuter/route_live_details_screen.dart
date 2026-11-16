@@ -87,7 +87,7 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
   // It is more accurate than the on-device tracking below, because it also
   // works for a jeepney that was already offline when this screen opened.
   // Leave empty to use on-device tracking only.
-  static const List<String> _serverTimeFields = [];
+  static const List<String> _serverTimeFields = ['last_location_update'];
 
   final Map<String, String> _lastLocKey = {};
   final Map<String, DateTime> _lastLocChangeAt = {};
