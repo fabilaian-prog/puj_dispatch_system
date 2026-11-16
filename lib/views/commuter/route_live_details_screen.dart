@@ -77,6 +77,23 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
   // on every live vehicle update.
   final Map<String, String> _driverNameCache = {};
 
+  // ── Signal freshness (offline detection) ──
+  // A vehicle that is EN_ROUTE but has sent no new coordinates for this long
+  // is shown as disconnected (grey dot on the map, "Disconnected" in popups).
+  static const Duration _offlineAfter = Duration(seconds: 30);
+
+  // OPTIONAL: if your driver app writes a server timestamp every time it
+  // sends coordinates, put that field name here (e.g. 'last_location_update').
+  // It is more accurate than the on-device tracking below, because it also
+  // works for a jeepney that was already offline when this screen opened.
+  // Leave empty to use on-device tracking only.
+  static const List<String> _serverTimeFields = [];
+
+  final Map<String, String> _lastLocKey = {};
+  final Map<String, DateTime> _lastLocChangeAt = {};
+  final ValueNotifier<int> _clock = ValueNotifier<int>(0);
+  Timer? _clockTimer;
+
   // ── Guinsang-an approach leg: Dalipe holding group -> Robinsons ──
   // Group 2 units wait at Dalipe without boarding, get called by the
   // Robinsons dispatcher, acknowledge, and drive to Robinsons (the start of
@@ -116,12 +133,20 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
       if (mounted) setState(() => _fareConfig = c);
     });
     _frameTicker = createTicker(_onFrame)..start();
+    // Re-evaluate "no new coordinates" even when Firestore sends nothing.
+    _clockTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted) return;
+      _clock.value++;
+      _animationFrame.value++;
+    });
   }
 
   @override
   void dispose() {
     _fareSub?.cancel();
     _connectivityTimer?.cancel();
+    _clockTimer?.cancel();
+    _clock.dispose();
     _frameTicker.dispose();
     _animationFrame.dispose();
     _showMarkerTags.dispose();
@@ -475,6 +500,42 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
 
     return _SpeedEstimate(mean, spread);
   }
+
+  // ─────────────────────────── Signal freshness helpers
+
+  /// When this vehicle last sent a new position.
+  DateTime _lastSignalAt(String id, Map<String, dynamic> data) {
+    final loc = data['location'];
+    final key = loc is Map ? '${loc['latitude']},${loc['longitude']}' : '';
+    final now = DateTime.now();
+    if (_lastLocKey[id] != key) {
+      _lastLocKey[id] = key;
+      _lastLocChangeAt[id] = now;
+    }
+    for (final f in _serverTimeFields) {
+      final v = data[f];
+      if (v is Timestamp) return v.toDate();
+    }
+    return _lastLocChangeAt[id] ?? now;
+  }
+
+  /// True when an EN_ROUTE vehicle has stopped sending new coordinates.
+  bool _isSignalLost(String id, Map<String, dynamic> data) =>
+      DateTime.now().difference(_lastSignalAt(id, data)) > _offlineAfter;
+
+  String _formatAgo(Duration d) {
+    final secs = d.inSeconds;
+    if (secs < 10) return 'just now';
+    if (secs < 60) return '${secs}s ago';
+    final mins = d.inMinutes;
+    if (mins < 60) return '$mins min ago';
+    final h = d.inHours;
+    final m = mins % 60;
+    return m == 0 ? '${h}h ago' : '${h}h ${m}m ago';
+  }
+
+  String _signalAgoText(String id, Map<String, dynamic> data) =>
+      _formatAgo(DateTime.now().difference(_lastSignalAt(id, data)));
 
   String _fmtMinutes(int m) {
     if (m < 60) return '$m min';
@@ -830,6 +891,62 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
     );
   }
 
+  Widget _buildOfflineBadge() {
+    final s = _s;
+    const slate = Color(0xFF64748B);
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 6 * s, vertical: 2 * s),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(6 * s),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.cloud_off_rounded, size: 11 * s, color: slate),
+          SizedBox(width: 4 * s),
+          Text(
+            'DISCONNECTED',
+            style: TextStyle(
+              fontSize: 10 * s,
+              fontWeight: FontWeight.w900,
+              color: slate,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Modal rows shown instead of ETA rows when the vehicle stopped sending data.
+  Widget _buildSignalLostRows(Map<String, dynamic> data, String vehicleId, double s) {
+    return Padding(
+      padding: EdgeInsets.only(top: 7 * s),
+      child: Column(
+        children: [
+          _buildDetailRow(
+            Icons.cloud_off_rounded,
+            'Status',
+            'Disconnected',
+            valueColor: AppColors.errorCrimson,
+          ),
+          SizedBox(height: 7 * s),
+          _buildDetailRow(
+            Icons.history_rounded,
+            'Last signal',
+            _signalAgoText(vehicleId, data),
+          ),
+          SizedBox(height: 6 * s),
+          Text(
+            'Showing the last known position. ETA resumes when the signal returns.',
+            textAlign: TextAlign.center,
+            style: AppTypography.outdoorBody(fontSize: 11 * s, fontWeight: FontWeight.normal),
+          ),
+        ],
+      ),
+    );
+  }
+
   // "ETA to Pin" + "Distance to Pin" rows for the vehicle modal.
   Widget _buildPinEtaRows(
     Map<String, dynamic> data,
@@ -960,6 +1077,10 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
                 final locKey = loc is Map ? '${loc['latitude']},${loc['longitude']}' : '';
                 _recordSpeed(vehicleId, speed, '$locKey|$speed');
 
+                return ValueListenableBuilder<int>(
+                  valueListenable: _clock,
+                  builder: (_, __, ___) {
+                final signalLost = isEnRoute && _isSignalLost(vehicleId, data);
                 return SingleChildScrollView(
                   padding: EdgeInsets.all(18 * s),
                   child: Column(
@@ -971,12 +1092,16 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
                           Container(
                             padding: EdgeInsets.all(8 * s),
                             decoration: BoxDecoration(
-                              color: isEnRoute ? const Color(0xFFECFDF5) : const Color(0xFFEFF6FF),
+                              color: signalLost
+                                  ? const Color(0xFFF1F5F9)
+                                  : isEnRoute ? const Color(0xFFECFDF5) : const Color(0xFFEFF6FF),
                               borderRadius: BorderRadius.circular(10 * s),
                             ),
                             child: Icon(
                               Icons.directions_bus_rounded,
-                              color: isEnRoute ? const Color(0xFF059669) : const Color(0xFF2563EB),
+                              color: signalLost
+                                  ? const Color(0xFF64748B)
+                                  : isEnRoute ? const Color(0xFF059669) : const Color(0xFF2563EB),
                               size: 24 * s,
                             ),
                           ),
@@ -995,7 +1120,10 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
                                         style: AppTypography.outdoorHeading(fontSize: 18 * s),
                                       ),
                                     ),
-                                    if (isEnRoute) ...[
+                                    if (signalLost) ...[
+                                      SizedBox(width: 6 * s),
+                                      _buildOfflineBadge(),
+                                    ] else if (isEnRoute) ...[
                                       SizedBox(width: 6 * s),
                                       _buildLiveBadge(),
                                     ],
@@ -1040,11 +1168,18 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
                       ),
                       if (showSpeed) ...[
                         SizedBox(height: 7 * s),
-                        _buildDetailRow(Icons.speed_rounded, 'Hardware Speed', '$speed km/h',
-                            valueColor: const Color(0xFF047857)),
+                        _buildDetailRow(
+                            Icons.speed_rounded,
+                            'Hardware Speed',
+                            signalLost ? 'No signal' : '$speed km/h',
+                            valueColor: signalLost
+                                ? const Color(0xFF64748B)
+                                : const Color(0xFF047857)),
                       ],
 
-                      if (_isGuinsangan && _isApproachingData(data))
+                      if (signalLost)
+                          _buildSignalLostRows(data, vehicleId, s)
+                        else if (_isGuinsangan && _isApproachingData(data))
                           _buildApproachEtaRows(data, vehicleId, s)
                         else
                           _buildPinEtaRows(data, vehicleId, speed, s),
@@ -1070,6 +1205,8 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
                       ),
                     ],
                   ),
+                );
+                  },
                 );
               },
             ),
@@ -1317,6 +1454,7 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
             final speed = (data['speed_kmh'] as num?)?.toInt() ?? 0;
             final currentSeats = (data['passenger_count'] as num?)?.toInt() ?? 0;
             final maxSeats = (data['max_capacity'] as num?)?.toInt() ?? 20;
+            final signalLost = _isSignalLost(doc.id, data);
 
             return Container(
               margin: EdgeInsets.only(bottom: 8 * s),
@@ -1335,11 +1473,17 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(10 * s),
-                    border: Border.all(color: const Color(0xFF86EFAC)),
+                    border: Border.all(
+                      color: signalLost ? const Color(0xFFCBD5E1) : const Color(0xFF86EFAC),
+                    ),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.navigation_rounded, size: 18 * s, color: const Color(0xFF059669)),
+                      Icon(
+                        signalLost ? Icons.cloud_off_rounded : Icons.navigation_rounded,
+                        size: 18 * s,
+                        color: signalLost ? const Color(0xFF64748B) : const Color(0xFF059669),
+                      ),
                       SizedBox(width: 6 * s),
                       _buildLicensePlateBadge(plate.toString(), fontSize: 13),
                       SizedBox(width: 8 * s),
@@ -1354,7 +1498,9 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
                               style: AppTypography.outdoorHeading(fontSize: 14 * s),
                             ),
                             Text(
-                              '$speed km/h',
+                              signalLost
+                                  ? 'Disconnected • ${_signalAgoText(doc.id, data)}'
+                                  : '$speed km/h',
                               style: AppTypography.outdoorBody(fontSize: 12.5 * s, fontWeight: FontWeight.w600),
                             ),
                           ],
@@ -2150,12 +2296,17 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
                           final lng = (loc['longitude'] as num).toDouble();
                           final plate = (data['plate_number'] ?? doc.id).toString();
                           final speed = (data['speed_kmh'] as num?)?.toInt() ?? 0;
-                          final dotColor = _resolveVehicleDotColor(data['vehicle_color']?.toString());
+                          final signalLost = _isSignalLost(doc.id, data);
+                          final dotColor = signalLost
+                              ? const Color(0xFF94A3B8)
+                              : _resolveVehicleDotColor(data['vehicle_color']?.toString());
                           final offRoute = _isOffRoute(doc.id, LatLng(lat, lng));
 
                           markers.add(
                             Marker(
-                              point: _smoothPosition(doc.id, LatLng(lat, lng), speed),
+                              point: signalLost
+                                  ? LatLng(lat, lng) // no prediction without fresh data
+                                  : _smoothPosition(doc.id, LatLng(lat, lng), speed),
                               width: 160 * s,
                               height: 62 * s,
                               child: GestureDetector(
@@ -2175,19 +2326,25 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
                                       Container(
                                         padding: EdgeInsets.symmetric(horizontal: 7 * s, vertical: 2.5 * s),
                                         decoration: BoxDecoration(
-                                          color: (offRoute ? const Color(0xFFD97706) : AppColors.primaryNavy).withOpacity(0.94),
+                                          color: (signalLost
+                                                  ? const Color(0xFF64748B)
+                                                  : offRoute ? const Color(0xFFD97706) : AppColors.primaryNavy)
+                                              .withOpacity(0.94),
                                           borderRadius: BorderRadius.circular(6 * s),
                                           border: Border.all(color: Colors.white70, width: 0.8),
                                         ),
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            if (offRoute) ...[
+                                            if (signalLost) ...[
+                                              Icon(Icons.cloud_off_rounded, color: Colors.white, size: 12 * s),
+                                              SizedBox(width: 3 * s),
+                                            ] else if (offRoute) ...[
                                               Icon(Icons.link_off_rounded, color: Colors.white, size: 12 * s),
                                               SizedBox(width: 3 * s),
                                             ],
                                             Text(
-                                              '$plate • $speed km/h',
+                                              signalLost ? '$plate • OFFLINE' : '$plate • $speed km/h',
                                               maxLines: 1,
                                               style: TextStyle(color: Colors.white, fontSize: 11.5 * s, fontWeight: FontWeight.bold),
                                             ),
@@ -2208,11 +2365,14 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
                                           width: 18 * s,
                                           height: 18 * s,
                                           decoration: BoxDecoration(
-                                            color: dotColor.withOpacity(speed < 3 ? 0.55 : 1.0),
+                                            color: dotColor.withOpacity(!signalLost && speed < 3 ? 0.55 : 1.0),
                                             shape: BoxShape.circle,
                                             border: Border.all(color: Colors.white, width: 2.2),
                                             boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 2)],
                                           ),
+                                          child: signalLost
+                                              ? Icon(Icons.close_rounded, color: Colors.white, size: 10 * s)
+                                              : null,
                                         ),
                                       ],
                                     ),
@@ -2233,19 +2393,25 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
                         }
                         _recordVehicleSpeed(doc.id, data);
                         final plate = (data['plate_number'] ?? doc.id).toString();
-                        final eta = _approachEtaText(doc.id, data);
+                        final signalLost = _isSignalLost(doc.id, data);
+                        final eta = signalLost ? 'signal lost' : _approachEtaText(doc.id, data);
 
                         markers.add(
                           Marker(
-                            point: _smoothPosition(
-                              doc.id,
-                              LatLng(
-                                (loc['latitude'] as num).toDouble(),
-                                (loc['longitude'] as num).toDouble(),
-                              ),
-                              (data['speed_kmh'] as num?) ?? 0,
-                              approach: true,
-                            ),
+                            point: signalLost
+                                ? LatLng(
+                                    (loc['latitude'] as num).toDouble(),
+                                    (loc['longitude'] as num).toDouble(),
+                                  )
+                                : _smoothPosition(
+                                    doc.id,
+                                    LatLng(
+                                      (loc['latitude'] as num).toDouble(),
+                                      (loc['longitude'] as num).toDouble(),
+                                    ),
+                                    (data['speed_kmh'] as num?) ?? 0,
+                                    approach: true,
+                                  ),
                             width: 200 * s,
                             height: 62 * s,
                             child: GestureDetector(
@@ -2265,12 +2431,13 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
                                     Container(
                                       padding: EdgeInsets.symmetric(horizontal: 7 * s, vertical: 2.5 * s),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFD97706).withOpacity(0.95),
+                                        color: (signalLost ? const Color(0xFF64748B) : const Color(0xFFD97706))
+                                            .withOpacity(0.95),
                                         borderRadius: BorderRadius.circular(6 * s),
                                         border: Border.all(color: Colors.white70, width: 0.8),
                                       ),
                                       child: Text(
-                                        '$plate → Robinsons • $eta',
+                                        signalLost ? '$plate • OFFLINE' : '$plate → Robinsons • $eta',
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(color: Colors.white, fontSize: 11.5 * s, fontWeight: FontWeight.bold),
@@ -2286,18 +2453,22 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
                                         height: 28 * s,
                                         decoration: BoxDecoration(
                                           shape: BoxShape.circle,
-                                          color: const Color(0xFFF59E0B).withOpacity(0.3),
+                                          color: (signalLost ? const Color(0xFF94A3B8) : const Color(0xFFF59E0B))
+                                              .withOpacity(0.3),
                                         ),
                                       ),
                                       Container(
                                         width: 18 * s,
                                         height: 18 * s,
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFFD97706),
+                                          color: signalLost ? const Color(0xFF94A3B8) : const Color(0xFFD97706),
                                           shape: BoxShape.circle,
                                           border: Border.all(color: Colors.white, width: 2.2),
                                           boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 2)],
                                         ),
+                                        child: signalLost
+                                            ? Icon(Icons.close_rounded, color: Colors.white, size: 10 * s)
+                                            : null,
                                       ),
                                     ],
                                   ),
@@ -2668,7 +2839,10 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
                       SizedBox(height: 12 * s),
                       _buildSpot1LoadingCard(queueData),
                       SizedBox(height: 14 * s),
-                      _buildEnRouteSection(enRouteDocs),
+                      ValueListenableBuilder<int>(
+                        valueListenable: _clock,
+                        builder: (_, __, ___) => _buildEnRouteSection(enRouteDocs),
+                      ),
                       if (_isGuinsangan && approachDocs.isNotEmpty) ...[
                         SizedBox(height: 14 * s),
                         _buildApproachSection(approachDocs),
