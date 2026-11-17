@@ -3948,8 +3948,6 @@ QueueSeeder.seedAll().then((created) async {
         final vData = snapshot.data?.data() as Map<String, dynamic>?;
         final plate = (vData?['plate_number'] ?? vehicleId).toString();
         final jeepName = (vData?['vehicle_name'] ?? plate).toString();
-        final passCount = (vData?['passenger_count'] as num?)?.toInt() ?? 0;
-        final maxCap = (vData?['max_capacity'] as num?)?.toInt() ?? 20;
 
         return Container(
           margin: const EdgeInsets.only(bottom: 7),
@@ -4034,99 +4032,6 @@ QueueSeeder.seedAll().then((created) async {
                 ),
               ),
 
-              if (isFrontOfQueue) ...[
-                const Divider(height: 1, color: Color(0xFFBBF7D0)),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.airline_seat_recline_normal_rounded,
-                        size: 15,
-                        color: Color(0xFF059669),
-                      ),
-                      const SizedBox(width: 5),
-                      Expanded(
-                        child: Text(
-                          'Seats: $passCount / $maxCap',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: passCount >= maxCap
-                                ? AppColors.errorCrimson
-                                : const Color(0xFF065F46),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      SizedBox(
-                        height: 28,
-                        width: 34,
-                        child: OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            side: const BorderSide(
-                              color: Color(0xFF059669),
-                              width: 1.1,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            backgroundColor: Colors.white,
-                          ),
-                          onPressed: passCount > 0
-                              ? () => _adjustPassengerCount(
-                                  vehicleId,
-                                  passCount,
-                                  maxCap,
-                                  -1,
-                                )
-                              : null,
-                          child: const Icon(
-                            Icons.remove_rounded,
-                            size: 16,
-                            color: Color(0xFF059669),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      SizedBox(
-                        height: 28,
-                        width: 34,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            backgroundColor: const Color(0xFF059669),
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ),
-                          onPressed: passCount < maxCap
-                              ? () => _adjustPassengerCount(
-                                  vehicleId,
-                                  passCount,
-                                  maxCap,
-                                  1,
-                                )
-                              : null,
-                          child: const Icon(
-                            Icons.add_rounded,
-                            size: 16,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
             ],
           ),
         );
