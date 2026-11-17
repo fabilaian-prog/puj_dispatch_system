@@ -823,11 +823,6 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
             () => _showCreateCoopDialog(context),
           ),
           _quickAction(
-            Icons.sync_alt_rounded,
-            'Migrate legacy PIN accounts',
-            _migrateAccounts,
-          ),
-          _quickAction(
             Icons.fact_check_outlined,
             'Review incident reports',
             () {
@@ -2811,12 +2806,6 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
       ),
       actions: [
         IconButton(
-          tooltip: 'Migrate accounts to Firebase login',
-          icon: const Icon(Icons.sync_alt_rounded,
-              color: Colors.white, size: 21),
-          onPressed: _migrateAccounts,
-        ),
-        IconButton(
           tooltip: 'Log out',
           icon:
               const Icon(Icons.logout_rounded, color: Colors.white, size: 21),
@@ -2858,22 +2847,6 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
               ],
             ),
           ),
-          OutlinedButton.icon(
-            onPressed: _migrateAccounts,
-            icon: const Icon(Icons.sync_alt_rounded, size: 18),
-            label: const Text(
-              'Migrate accounts',
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primaryNavy,
-              side: const BorderSide(color: AppColors.borderSubtle),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-          ),
-          const SizedBox(width: 10),
           ElevatedButton.icon(
             onPressed: () => _showCreateCoopDialog(context),
             icon: const Icon(Icons.add_business_rounded, size: 18),
