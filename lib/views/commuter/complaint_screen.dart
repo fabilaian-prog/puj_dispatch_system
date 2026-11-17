@@ -307,7 +307,7 @@ class _PassengerComplaintScreenState extends State<PassengerComplaintScreen> {
       final nameFilled = _autofillNameFromId(extractedText, ocrLines);
       _verifyExtractedText(extractedText);
 
-      if (!nameFilled && _isIdRecognized && mounted) {
+      if (!nameFilled && _isIdRecognized && !_isNameMatched && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Couldn't read a name from this ID. Please type it exactly as printed."),
