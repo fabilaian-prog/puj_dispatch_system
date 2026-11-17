@@ -2607,23 +2607,23 @@ QueueSeeder.seedAll().then((created) async {
         // 1. Read & Validate Driver Document Inside Transaction
         final driverSnap = await transaction.get(driverRef);
         if (!driverSnap.exists) {
-          throw 'Driver record ($driverId) not found in system.';
+          throw Exception('Driver record ($driverId) not found in system.');
         }
         final uData = driverSnap.data() as Map<String, dynamic>;
         final activeToken = uData['qr_token']?.toString().trim();
         final Timestamp? expiresTs = uData['qr_expires_at'] as Timestamp?;
 
         if (activeToken == null || activeToken != scannedToken) {
-          throw 'Pass expired or already scanned. Please generate a new pass.';
+          throw Exception('Pass expired or already scanned. Please generate a new pass.');
         }
         if (expiresTs != null && DateTime.now().isAfter(expiresTs.toDate())) {
-          throw 'Pass has expired (validity exceeded 30 minutes).';
+          throw Exception('Pass has expired (validity exceeded 30 minutes).');
         }
 
         // Check: a suspended driver may not enter any queue.
         final susp = DriverSuspension.fromUser(uData);
         if (susp.active) {
-          throw '$driverName is suspended. ${susp.message}';
+          throw Exception('$driverName is suspended. ${susp.message}');
         }
 
         // Check: Daily pre-trip (B.L.O.W.B.A.G.E.T.S.) must be completed TODAY.
@@ -2633,24 +2633,24 @@ QueueSeeder.seedAll().then((created) async {
             '${now.month.toString().padLeft(2, '0')}-'
             '${now.day.toString().padLeft(2, '0')}';
         if ((uData['pretrip_date'] ?? '').toString() != todayKey) {
-          throw 'Pre-trip check not completed today. $driverName must finish the B.L.O.W.B.A.G.E.T.S. checklist before entering the queue.';
+          throw Exception('Pre-trip check not completed today. $driverName must finish the B.L.O.W.B.A.G.E.T.S. checklist before entering the queue.');
         }
 
         // 2. Read & Validate Vehicle Document Inside Transaction
         final vehicleSnap = await transaction.get(vehicleRef);
         if (!vehicleSnap.exists) {
-          throw 'Unauthorized: Unit "$vehicleId" not found in active fleet.';
+          throw Exception('Unauthorized: Unit "$vehicleId" not found in active fleet.');
         }
         final vData = vehicleSnap.data() as Map<String, dynamic>;
 
         if (vData['driver_id'] != driverId &&
             uData['assigned_vehicle'] != vehicleId) {
-          throw 'Driver $driverName is not registered to vehicle $vehicleId!';
+          throw Exception('Driver $driverName is not registered to vehicle $vehicleId!');
         }
 
         final registeredRoute = (vData['route_id'] ?? '').toString().trim();
         if (registeredRoute != _assignedRouteId) {
-          throw 'Route Mismatch! Unit belongs to ${_formatRouteName(registeredRoute)}, not ${_formatRouteName(_assignedRouteId)}.';
+          throw Exception('Route Mismatch! Unit belongs to ${_formatRouteName(registeredRoute)}, not ${_formatRouteName(_assignedRouteId)}.');
         }
 
         // 3. Read & Validate Queue Document
@@ -2669,7 +2669,7 @@ QueueSeeder.seedAll().then((created) async {
         if (activeUnit == vehicleId ||
             queued.contains(vehicleId) ||
             standby.contains(vehicleId)) {
-          throw 'Unit $vehicleId is already in the terminal queue.';
+          throw Exception('Unit $vehicleId is already in the terminal queue.');
         }
 
         // 3b. Master rotation list: is this unit in the group that goes to Robinsons?
@@ -2706,7 +2706,7 @@ QueueSeeder.seedAll().then((created) async {
                   : 0) +
               queued.length;
           if (occupiedSlots >= 4) {
-            throw 'Robinsons Bay is full (4/4 slots occupied). Unit must wait.';
+            throw Exception('Robinsons Bay is full (4/4 slots occupied). Unit must wait.');
           }
 
           if (activeUnit == null ||
@@ -2798,7 +2798,8 @@ QueueSeeder.seedAll().then((created) async {
 
       _showSnackbar('$feedbackMessage • Pre-trip verified');
     } catch (e) {
-      _showSnackbar('Check-in error: $e', isError: true);
+      final msg = e is Exception ? e.toString().replaceFirst('Exception: ', '') : e.toString();
+      _showSnackbar('Check-in error: $msg', isError: true);
     }
   }
 
@@ -2970,7 +2971,7 @@ QueueSeeder.seedAll().then((created) async {
       final List queued = _parseStringList(qDocData['queued_vehicles']);
 
       if (activeUnit == vehicleId || queued.contains(vehicleId)) {
-        throw '$vehicleId is already in the Robinsons terminal line-up.';
+        throw Exception('$vehicleId is already in the Robinsons terminal line-up.');
       }
 
       final int occupiedSlots =
@@ -2979,7 +2980,7 @@ QueueSeeder.seedAll().then((created) async {
               : 0) +
           queued.length;
       if (occupiedSlots >= 4) {
-        throw 'Robinsons Bay is Full (4/4 slots occupied). Unit must hold.';
+        throw Exception('Robinsons Bay is Full (4/4 slots occupied). Unit must hold.');
       }
 
       if (activeUnit == null || activeUnit == 'None' || activeUnit.isEmpty) {
@@ -3067,7 +3068,7 @@ QueueSeeder.seedAll().then((created) async {
         final List queued = _parseStringList(qDocData['queued_vehicles']);
 
         if (activeUnit == vehicleId || queued.contains(vehicleId)) {
-          throw '$vehicleId is already checked into Robinsons line-up.';
+          throw Exception('$vehicleId is already checked into Robinsons line-up.');
         }
 
         final int occupiedSlots =
@@ -3076,7 +3077,7 @@ QueueSeeder.seedAll().then((created) async {
                 : 0) +
             queued.length;
         if (occupiedSlots >= 4) {
-          throw 'Robinsons Bay is Full (4/4 slots occupied). Unit must wait.';
+          throw Exception('Robinsons Bay is Full (4/4 slots occupied). Unit must wait.');
         }
 
         if (activeUnit == null || activeUnit == 'None' || activeUnit.isEmpty) {
@@ -3113,7 +3114,7 @@ QueueSeeder.seedAll().then((created) async {
         if (activeUnit == vehicleId ||
             queued.contains(vehicleId) ||
             standby.contains(vehicleId)) {
-          throw '$vehicleId is already checked into Dalipe terminal.';
+          throw Exception('$vehicleId is already checked into Dalipe terminal.');
         }
 
         if (vehicleGroup == activeGroup) {
