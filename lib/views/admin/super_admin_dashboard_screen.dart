@@ -843,7 +843,7 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
         final pad = wide ? 28.0 : 16.0;
 
         final cols = w >= 1000 ? 4 : 2;
-        final inner = (w.clamp(0, 1240) as num).toDouble() - pad * 2;
+        final inner = w - pad * 2;
         final tileW = (inner - 10 * (cols - 1)) / cols;
 
         Widget tile(Widget t) => SizedBox(width: tileW, child: t);
@@ -954,14 +954,9 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
           );
         }
 
-        return Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1240),
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(pad, 18, pad, 32),
-              children: [content],
-            ),
-          ),
+        return ListView(
+          padding: EdgeInsets.fromLTRB(pad, 18, pad, 32),
+          children: [content],
         );
       },
     );
@@ -1359,12 +1354,9 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                   return true;
                 }).toList();
 
-                return Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1240),
-                    child: ListView(
-                      padding: EdgeInsets.fromLTRB(pad, 16, pad, 96),
-                      children: [
+                return ListView(
+                  padding: EdgeInsets.fromLTRB(pad, 16, pad, 96),
+                  children: [
                         if (vehSnap.hasData && unlinked.isNotEmpty) ...[
                           Container(
                             margin: const EdgeInsets.only(bottom: 14),
@@ -1467,9 +1459,7 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                               ),
                             ),
                           ),
-                      ],
-                    ),
-                  ),
+                  ],
                 );
               },
             );
@@ -2015,19 +2005,14 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 460),
-              child: CoopSegmented(
-                labels: const ['Passenger complaints', 'Queue overrides'],
-                icons: const [
-                  Icons.report_problem_rounded,
-                  Icons.swap_vert_circle_rounded,
-                ],
-                index: _reportsSegment,
-                onChanged: (i) => setState(() => _reportsSegment = i),
-              ),
-            ),
+          child: CoopSegmented(
+            labels: const ['Passenger complaints', 'Queue overrides'],
+            icons: const [
+              Icons.report_problem_rounded,
+              Icons.swap_vert_circle_rounded,
+            ],
+            index: _reportsSegment,
+            onChanged: (i) => setState(() => _reportsSegment = i),
           ),
         ),
         Expanded(
@@ -2043,6 +2028,7 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
     return LayoutBuilder(
       builder: (context, constraints) {
         final bool isDesktop = constraints.maxWidth >= 850;
+        final bool isWide = constraints.maxWidth >= 1100;
         final double pad = isDesktop ? 28 : 16;
 
         return StreamBuilder<QuerySnapshot>(
@@ -2114,143 +2100,129 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
               return true;
             }).toList();
 
-            return Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1240),
-                child: ListView(
-                  padding: EdgeInsets.fromLTRB(pad, 16, pad, 40),
+            Widget complaintCard(QueryDocumentSnapshot doc) {
+              final m = doc.data() as Map<String, dynamic>;
+              final cat = (m['category'] ?? 'Incident').toString();
+              final plate = (m['plate_number'] ?? 'N/A').toString();
+              final desc = (m['description'] ?? '').toString();
+              final status = (m['status'] ?? 'PENDING_VERIFICATION')
+                  .toString()
+                  .toUpperCase();
+              final latestNote = (m['latest_coop_comment'] ?? '').toString();
+              final ts = (m['created_at'] as Timestamp?)?.toDate();
+              final CoopTone tone = status.contains('RESOLVED')
+                  ? CoopTone.success
+                  : (status.contains('REVIEW') ? CoopTone.info : CoopTone.warning);
+              final String statusLabel = status.contains('RESOLVED')
+                  ? 'Resolved'
+                  : (status.contains('REVIEW') ? 'Under review' : 'Pending');
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.borderSubtle),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    CoopSearchField(
-                      controller: _reportSearchCtrl,
-                      hint: 'Search plate number, category, or description',
-                      onChanged: (v) => setState(() => _reportSearchQuery = v),
-                    ),
-                    const SizedBox(height: 12),
-                    CoopChoiceChips(
-                      value: _complaintStatusFilter,
-                      onChanged: (v) =>
-                          setState(() => _complaintStatusFilter = v),
-                      choices: [
-                        CoopChoice('ALL', 'All reports', count: allDocs.length),
-                        CoopChoice('PENDING', 'Pending', count: pendingCount),
-                        CoopChoice('UNDER_REVIEW', 'Under review',
-                            count: reviewCount),
-                        CoopChoice('RESOLVED', 'Resolved',
-                            count: resolvedCount),
+                    Row(
+                      children: [
+                        CoopPlate(plate),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(cat,
+                              style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.darkSlate)),
+                        ),
+                        CoopPill(statusLabel, tone: tone),
                       ],
                     ),
-                    const SizedBox(height: 14),
-                    if (filtered.isEmpty)
-                      const CoopEmptyState(
-                        icon: Icons.fact_check_outlined,
-                        title: 'No matching passenger reports',
-                        message: 'Try adjusting your search or status filter.',
-                      )
-                    else
-                      ...filtered.map((doc) {
-                        final m = doc.data() as Map<String, dynamic>;
-                        final cat =
-                            (m['category'] ?? 'Incident').toString();
-                        final plate =
-                            (m['plate_number'] ?? 'N/A').toString();
-                        final desc = (m['description'] ?? '').toString();
-                        final status = (m['status'] ?? 'PENDING_VERIFICATION')
-                            .toString()
-                            .toUpperCase();
-                        final latestNote =
-                            (m['latest_coop_comment'] ?? '').toString();
-                        final ts =
-                            (m['created_at'] as Timestamp?)?.toDate();
-
-                        final CoopTone tone = status.contains('RESOLVED')
-                            ? CoopTone.success
-                            : (status.contains('REVIEW')
-                                ? CoopTone.info
-                                : CoopTone.warning);
-                        final String statusLabel = status.contains('RESOLVED')
-                            ? 'Resolved'
-                            : (status.contains('REVIEW')
-                                ? 'Under review'
-                                : 'Pending');
-
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: AppColors.borderSubtle),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  CoopPlate(plate),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      cat,
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.darkSlate,
-                                      ),
-                                    ),
-                                  ),
-                                  CoopPill(statusLabel, tone: tone),
-                                ],
-                              ),
-                              if (desc.isNotEmpty) ...[
-                                const SizedBox(height: 8),
-                                Text(
-                                  desc,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    color: AppColors.darkSlate,
-                                    height: 1.35,
-                                  ),
-                                ),
-                              ],
-                              if (latestNote.isNotEmpty) ...[
-                                const SizedBox(height: 8),
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 7),
-                                  decoration: BoxDecoration(
-                                    color: CoopTone.info.bg,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border:
-                                        Border.all(color: CoopTone.info.line),
-                                  ),
-                                  child: Text(
-                                    'Coop Action: $latestNote',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: CoopTone.info.fg,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              if (ts != null) ...[
-                                const SizedBox(height: 6),
-                                Text(
-                                  'Filed ${_ago(ts)}',
-                                  style: const TextStyle(
-                                    fontSize: 11.5,
-                                    color: AppColors.textMuted,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        );
-                      }),
+                    if (desc.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(desc,
+                          style: const TextStyle(
+                              fontSize: 13,
+                              color: AppColors.darkSlate,
+                              height: 1.35)),
+                    ],
+                    if (latestNote.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: CoopTone.info.bg,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: CoopTone.info.line),
+                        ),
+                        child: Text('Coop Action: $latestNote',
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: CoopTone.info.fg)),
+                      ),
+                    ],
+                    if (ts != null) ...[
+                      const SizedBox(height: 6),
+                      Text('Filed ${_ago(ts)}',
+                          style: const TextStyle(
+                              fontSize: 11.5, color: AppColors.textMuted)),
+                    ],
                   ],
                 ),
-              ),
+              );
+            }
+
+            return ListView(
+              padding: EdgeInsets.fromLTRB(pad, 16, pad, 40),
+              children: [
+                CoopSearchField(
+                  controller: _reportSearchCtrl,
+                  hint: 'Search plate number, category, or description',
+                  onChanged: (v) => setState(() => _reportSearchQuery = v),
+                ),
+                const SizedBox(height: 12),
+                CoopChoiceChips(
+                  value: _complaintStatusFilter,
+                  onChanged: (v) =>
+                      setState(() => _complaintStatusFilter = v),
+                  choices: [
+                    CoopChoice('ALL', 'All reports', count: allDocs.length),
+                    CoopChoice('PENDING', 'Pending', count: pendingCount),
+                    CoopChoice('UNDER_REVIEW', 'Under review',
+                        count: reviewCount),
+                    CoopChoice('RESOLVED', 'Resolved', count: resolvedCount),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                if (filtered.isEmpty)
+                  const CoopEmptyState(
+                    icon: Icons.fact_check_outlined,
+                    title: 'No matching passenger reports',
+                    message: 'Try adjusting your search or status filter.',
+                  )
+                else if (isWide)
+                  GridView.builder(
+                    physics: const NeverScrollableScrollPhysics(),
+                    shrinkWrap: true,
+                    gridDelegate:
+                        const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 600,
+                      mainAxisExtent: 180,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 0,
+                    ),
+                    itemCount: filtered.length,
+                    itemBuilder: (_, i) => complaintCard(filtered[i]),
+                  )
+                else
+                  ...filtered.map(complaintCard),
+              ],
             );
           },
         );
@@ -2267,76 +2239,74 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
         : 'To';
     final bool hasFilter = _auditDateFrom != null || _auditDateTo != null;
 
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1000),
-              child: Row(
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: _auditDateFrom ?? DateTime.now(),
-                        firstDate: DateTime(2024),
-                        lastDate: DateTime.now(),
-                        helpText: 'Select start date',
-                      );
-                      if (picked != null) setState(() => _auditDateFrom = picked);
-                    },
-                    icon: const Icon(Icons.calendar_today_rounded, size: 15),
-                    label: Text(fromLabel, style: const TextStyle(fontSize: 13)),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primaryNavy,
-                      side: const BorderSide(color: AppColors.borderSubtle),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
+    return LayoutBuilder(builder: (context, constraints) {
+      final bool isWide = constraints.maxWidth >= 1100;
+      final double pad = constraints.maxWidth >= 850 ? 28 : 16;
+      return Column(
+        children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(pad, 12, pad, 0),
+            child: Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: _auditDateFrom ?? DateTime.now(),
+                      firstDate: DateTime(2024),
+                      lastDate: DateTime.now(),
+                      helpText: 'Select start date',
+                    );
+                    if (picked != null) setState(() => _auditDateFrom = picked);
+                  },
+                  icon: const Icon(Icons.calendar_today_rounded, size: 15),
+                  label: Text(fromLabel, style: const TextStyle(fontSize: 13)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primaryNavy,
+                    side: const BorderSide(color: AppColors.borderSubtle),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8),
-                    child: Text('–', style: TextStyle(color: AppColors.textMuted)),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: Text('–', style: TextStyle(color: AppColors.textMuted)),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: _auditDateTo ?? DateTime.now(),
+                      firstDate: _auditDateFrom ?? DateTime(2024),
+                      lastDate: DateTime.now(),
+                      helpText: 'Select end date',
+                    );
+                    if (picked != null) setState(() => _auditDateTo = picked);
+                  },
+                  icon: const Icon(Icons.calendar_today_rounded, size: 15),
+                  label: Text(toLabel, style: const TextStyle(fontSize: 13)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primaryNavy,
+                    side: const BorderSide(color: AppColors.borderSubtle),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: _auditDateTo ?? DateTime.now(),
-                        firstDate: _auditDateFrom ?? DateTime(2024),
-                        lastDate: DateTime.now(),
-                        helpText: 'Select end date',
-                      );
-                      if (picked != null) setState(() => _auditDateTo = picked);
-                    },
-                    icon: const Icon(Icons.calendar_today_rounded, size: 15),
-                    label: Text(toLabel, style: const TextStyle(fontSize: 13)),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primaryNavy,
-                      side: const BorderSide(color: AppColors.borderSubtle),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
+                ),
+                if (hasFilter) ...[
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    onPressed: () => setState(() {
+                      _auditDateFrom = null;
+                      _auditDateTo = null;
+                    }),
+                    icon: const Icon(Icons.close_rounded, size: 15),
+                    label: const Text('Clear', style: TextStyle(fontSize: 13)),
+                    style: TextButton.styleFrom(foregroundColor: AppColors.textMuted),
                   ),
-                  if (hasFilter) ...[
-                    const SizedBox(width: 8),
-                    TextButton.icon(
-                      onPressed: () => setState(() {
-                        _auditDateFrom = null;
-                        _auditDateTo = null;
-                      }),
-                      icon: const Icon(Icons.close_rounded, size: 15),
-                      label: const Text('Clear', style: TextStyle(fontSize: 13)),
-                      style: TextButton.styleFrom(foregroundColor: AppColors.textMuted),
-                    ),
-                  ],
                 ],
-              ),
+              ],
             ),
           ),
-        ),
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
             stream: _auditsStream,
@@ -2371,98 +2341,91 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                 return const CoopEmptyState(
                   icon: Icons.verified_user_outlined,
                   title: 'No queue overrides recorded',
-                  message:
-                      'Terminal dispatcher queue reorderings across all routes will appear here.',
+                  message: 'Terminal dispatcher queue reorderings across all routes will appear here.',
                 );
               }
 
-              return Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1000),
-                  child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 40),
-                    itemCount: docs.length,
-                    itemBuilder: (context, index) {
-                      final data = docs[index].data() as Map<String, dynamic>;
-                      final reason =
-                          (data['reason'] ?? 'Operational adjustment').toString();
-                      final dispatcher =
-                          (data['dispatcher_name'] ?? 'Dispatcher').toString();
-                      final route = _formatRouteDisplayName(
-                          (data['route_id'] ?? '').toString());
-                      final coops =
-                          (data['affected_cooperative_names'] as List<dynamic>?)
-                                  ?.map((e) => e.toString())
-                                  .toList() ??
-                              const <String>[];
-                      final isCross = coops.length > 1;
-                      final ts = (data['timestamp'] as Timestamp?)?.toDate();
-
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: isCross
-                                ? CoopTone.warning.line
-                                : AppColors.borderSubtle,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                CoopPill(
-                                  isCross
-                                      ? 'Cross-cooperative override'
-                                      : 'Queue override',
-                                  tone: isCross ? CoopTone.warning : CoopTone.info,
-                                  icon: Icons.swap_vert_rounded,
-                                ),
-                                if (ts != null)
-                                  Text(
-                                    _ago(ts),
-                                    style: const TextStyle(
-                                      fontSize: 11.5,
-                                      color: AppColors.textMuted,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Reason: "$reason"',
-                              style: const TextStyle(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.darkSlate,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '$route  •  Authorized by $dispatcher${coops.isNotEmpty ? '  •  ${coops.join(' & ')}' : ''}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textMuted,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+              Widget auditCard(QueryDocumentSnapshot doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                final reason = (data['reason'] ?? 'Operational adjustment').toString();
+                final dispatcher = (data['dispatcher_name'] ?? 'Dispatcher').toString();
+                final route = _formatRouteDisplayName((data['route_id'] ?? '').toString());
+                final coops = (data['affected_cooperative_names'] as List<dynamic>?)
+                        ?.map((e) => e.toString())
+                        .toList() ??
+                    const <String>[];
+                final isCross = coops.length > 1;
+                final ts = (data['timestamp'] as Timestamp?)?.toDate();
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isCross ? CoopTone.warning.line : AppColors.borderSubtle,
+                    ),
                   ),
-                ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          CoopPill(
+                            isCross ? 'Cross-cooperative override' : 'Queue override',
+                            tone: isCross ? CoopTone.warning : CoopTone.info,
+                            icon: Icons.swap_vert_rounded,
+                          ),
+                          if (ts != null)
+                            Text(_ago(ts),
+                                style: const TextStyle(
+                                    fontSize: 11.5,
+                                    color: AppColors.textMuted,
+                                    fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text('Reason: "$reason"',
+                          style: const TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.darkSlate)),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$route  •  Authorized by $dispatcher${coops.isNotEmpty ? '  •  ${coops.join(' & ')}' : ''}',
+                        style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              if (isWide) {
+                return GridView.builder(
+                  padding: EdgeInsets.fromLTRB(pad, 16, pad, 40),
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 580,
+                    mainAxisExtent: 130,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 10,
+                  ),
+                  itemCount: docs.length,
+                  itemBuilder: (_, i) => auditCard(docs[i]),
+                );
+              }
+
+              return ListView.builder(
+                padding: EdgeInsets.fromLTRB(pad, 16, pad, 40),
+                itemCount: docs.length,
+                itemBuilder: (_, i) => auditCard(docs[i]),
               );
             },
           ),
         ),
       ],
     );
+  });
   }
 
   // ===========================================================================
