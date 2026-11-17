@@ -35,7 +35,7 @@ class _FareSettingsTabState extends State<FareSettingsTab> {
       _baseDiscCtrl,
       _baseKmCtrl,
       _perKmCtrl,
-      _perKmDiscCtrl
+      _perKmDiscCtrl,
     ]) {
       c.addListener(() {
         if (mounted) setState(() {});
@@ -77,16 +77,17 @@ class _FareSettingsTabState extends State<FareSettingsTab> {
     setState(() => _loaded = true);
   }
 
-  /// Parses the form; returns null if any field is invalid.
   FareConfig? _draft() {
     final base = double.tryParse(_baseCtrl.text.trim());
     final baseD = double.tryParse(_baseDiscCtrl.text.trim());
     final km = int.tryParse(_baseKmCtrl.text.trim());
     final per = double.tryParse(_perKmCtrl.text.trim());
     final perD = double.tryParse(_perKmDiscCtrl.text.trim());
-    if (base == null || baseD == null || km == null || per == null || perD == null) {
-      return null;
-    }
+    if (base == null ||
+        baseD == null ||
+        km == null ||
+        per == null ||
+        perD == null) return null;
     if (base <= 0 || baseD <= 0 || per < 0 || perD < 0 || km < 1 || km > 50) {
       return null;
     }
@@ -110,7 +111,9 @@ class _FareSettingsTabState extends State<FareSettingsTab> {
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Update fare rates?'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Update fare rates?',
+            style: TextStyle(fontWeight: FontWeight.w800)),
         content: const Text(
             'The new rates will show to all commuters immediately. This change is logged.'),
         actions: [
@@ -118,8 +121,11 @@ class _FareSettingsTabState extends State<FareSettingsTab> {
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancel')),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Update')),
+            style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primaryNavy),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Update'),
+          ),
         ],
       ),
     );
@@ -146,68 +152,146 @@ class _FareSettingsTabState extends State<FareSettingsTab> {
       _saved = next;
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Fare rates updated.')));
+        const SnackBar(
+          content: Text('Fare rates updated successfully.'),
+          backgroundColor: AppColors.commuterTeal,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Could not save: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not save: $e'),
+              backgroundColor: AppColors.errorCrimson));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
 
-  Widget _field(String label, TextEditingController c,
-      {String? prefix, String? suffix, bool integer = false}) {
-    return TextField(
-      controller: c,
-      keyboardType: TextInputType.numberWithOptions(decimal: !integer),
-      inputFormatters: [
-        FilteringTextInputFormatter.allow(
-            integer ? RegExp(r'[0-9]') : RegExp(r'[0-9.]')),
+  // ── Input field ────────────────────────────────────────────────────────────
+  Widget _fareField(String label, TextEditingController c,
+      {bool integer = false, String? suffix}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textMuted,
+                letterSpacing: 0.3)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: c,
+          keyboardType:
+              TextInputType.numberWithOptions(decimal: !integer),
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(
+                integer ? RegExp(r'[0-9]') : RegExp(r'[0-9.]')),
+          ],
+          style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: AppColors.darkSlate),
+          decoration: InputDecoration(
+            prefixText: integer ? null : '₱ ',
+            prefixStyle: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textMuted),
+            suffixText: suffix,
+            suffixStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textMuted),
+            filled: true,
+            fillColor: AppColors.backgroundSlate,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide:
+                    const BorderSide(color: AppColors.borderSubtle)),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide:
+                    const BorderSide(color: AppColors.borderSubtle)),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(
+                    color: AppColors.primaryNavy, width: 1.8)),
+          ),
+        ),
       ],
-      decoration: InputDecoration(
-        labelText: label,
-        prefixText: prefix,
-        suffixText: suffix,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-        isDense: true,
-      ),
     );
   }
 
-  Widget _card({required String title, required Widget child}) {
+  // ── Section card ───────────────────────────────────────────────────────────
+  Widget _section({
+    required IconData icon,
+    required Color iconColor,
+    required Color iconBg,
+    required String title,
+    required String subtitle,
+    required Widget child,
+  }) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title,
-              style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.darkSlate)),
-          const SizedBox(height: 12),
-          child,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: iconBg,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: iconColor, size: 18),
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.darkSlate)),
+                    Text(subtitle,
+                        style: const TextStyle(
+                            fontSize: 12, color: AppColors.textMuted)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 18),
+            child: Divider(height: 20, color: AppColors.borderSubtle),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+            child: child,
+          ),
         ],
       ),
     );
   }
 
-  Widget _row2(Widget a, Widget b) => Row(children: [
-        Expanded(child: a),
-        const SizedBox(width: 12),
-        Expanded(child: b),
-      ]);
-
   @override
   Widget build(BuildContext context) {
-    if (!_loaded) return const Center(child: CircularProgressIndicator());
+    if (!_loaded) {
+      return const Center(
+          child: CircularProgressIndicator(color: AppColors.primaryNavy));
+    }
 
     final draft = _draft();
     final changed = draft != null && !_same(draft, _saved);
@@ -217,114 +301,238 @@ class _FareSettingsTabState extends State<FareSettingsTab> {
 
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 720),
+        constraints: const BoxConstraints(maxWidth: 740),
         child: ListView(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
           children: [
+            // ── Error banner ──────────────────────────────────────────────
             if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Text(_error!,
-                    style: const TextStyle(color: Colors.redAccent)),
+              Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF2F2),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFFECACA)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded,
+                        color: AppColors.errorCrimson, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                        child: Text(_error!,
+                            style: const TextStyle(
+                                fontSize: 13,
+                                color: AppColors.errorCrimson))),
+                  ],
+                ),
               ),
-            _card(
-              title: 'Regular fare',
-              child: _row2(
-                _field('Base fare', _baseCtrl, prefix: '₱ '),
-                _field('Per extra km', _perKmCtrl, prefix: '₱ '),
+
+            // ── Warn banner ───────────────────────────────────────────────
+            if (warn)
+              Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFBEB),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded,
+                        color: Color(0xFFD97706), size: 18),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Heads up: a discounted rate is higher than the regular rate.',
+                        style: TextStyle(
+                            fontSize: 13, color: Color(0xFF92400E)),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            _card(
-              title: 'Student / PWD / Senior fare',
-              child: _row2(
-                _field('Base fare', _baseDiscCtrl, prefix: '₱ '),
-                _field('Per extra km', _perKmDiscCtrl, prefix: '₱ '),
-              ),
-            ),
-            _card(
-              title: 'Base distance',
-              child: Column(
+
+            // ── Regular fare ──────────────────────────────────────────────
+            _section(
+              icon: Icons.person_rounded,
+              iconColor: AppColors.primaryNavy,
+              iconBg: const Color(0xFFEFF6FF),
+              title: 'Regular Fare',
+              subtitle: 'Standard rate for all passengers',
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Expanded(
+                      child: _fareField('Base fare', _baseCtrl)),
+                  const SizedBox(width: 14),
+                  Expanded(
+                      child:
+                          _fareField('Per extra km', _perKmCtrl)),
+                ],
+              ),
+            ),
+
+            // ── Discounted fare ───────────────────────────────────────────
+            _section(
+              icon: Icons.school_rounded,
+              iconColor: AppColors.commuterTeal,
+              iconBg: AppColors.commuterTealLight,
+              title: 'Discounted Fare',
+              subtitle: 'Students, PWDs & Senior Citizens',
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                      child: _fareField('Base fare', _baseDiscCtrl)),
+                  const SizedBox(width: 14),
+                  Expanded(
+                      child: _fareField(
+                          'Per extra km', _perKmDiscCtrl)),
+                ],
+              ),
+            ),
+
+            // ── Base distance ─────────────────────────────────────────────
+            _section(
+              icon: Icons.route_rounded,
+              iconColor: const Color(0xFF7C3AED),
+              iconBg: const Color(0xFFF5F3FF),
+              title: 'Base Distance',
+              subtitle: 'Kilometres the base fare already covers',
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
                   SizedBox(
-                    width: 220,
-                    child: _field('Base fare covers first',
-                        _baseKmCtrl,
-                        suffix: 'km', integer: true),
+                    width: 160,
+                    child: _fareField('Base distance', _baseKmCtrl,
+                        integer: true, suffix: 'km'),
                   ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Fares are rounded up to the next whole peso. Partial km count as a full km.',
-                    style:
-                        TextStyle(fontSize: 12, color: AppColors.textMuted),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        'Fares are rounded up to the next whole peso.\nPartial km counts as a full km.',
+                        style: TextStyle(
+                            fontSize: 12.5,
+                            color: AppColors.textMuted,
+                            height: 1.5),
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
-            _card(
-              title: 'Preview',
+
+            // ── Fare preview ──────────────────────────────────────────────
+            _section(
+              icon: Icons.table_chart_rounded,
+              iconColor: const Color(0xFF059669),
+              iconBg: const Color(0xFFECFDF5),
+              title: 'Live Preview',
+              subtitle: 'What commuters will see at these rates',
               child: draft == null
-                  ? const Text(
-                      'Enter valid numbers (base distance 1 to 50 km).',
-                      style: TextStyle(color: Colors.redAccent))
-                  : Table(
-                      columnWidths: const {
-                        0: FlexColumnWidth(1),
-                        1: FlexColumnWidth(1),
-                        2: FlexColumnWidth(1),
-                      },
-                      children: [
-                        const TableRow(children: [
-                          Padding(
-                              padding: EdgeInsets.only(bottom: 6),
-                              child: Text('Distance',
-                                  style:
-                                      TextStyle(fontWeight: FontWeight.w700))),
-                          Text('Regular',
-                              style: TextStyle(fontWeight: FontWeight.w700)),
-                          Text('Discounted',
-                              style: TextStyle(fontWeight: FontWeight.w700)),
-                        ]),
-                        for (final km in [1, 4, 5, 10, 20, 30])
-                          TableRow(children: [
-                            Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 3),
-                                child: Text('$km km')),
-                            Text('₱${draft.regularForKm(km).round()}'),
-                            Text('₱${draft.discountedForKm(km).round()}'),
-                          ]),
-                      ],
-                    ),
+                  ? Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF2F2),
+                        borderRadius: BorderRadius.circular(10),
+                        border:
+                            Border.all(color: const Color(0xFFFECACA)),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.error_outline_rounded,
+                              color: AppColors.errorCrimson, size: 16),
+                          SizedBox(width: 8),
+                          Text(
+                            'Enter valid numbers above (base distance: 1–50 km).',
+                            style: TextStyle(
+                                fontSize: 13,
+                                color: AppColors.errorCrimson),
+                          ),
+                        ],
+                      ),
+                    )
+                  : _previewTable(draft),
             ),
-            if (warn)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 10),
-                child: Text(
-                  'Heads up: a discounted rate is higher than the regular rate.',
-                  style: TextStyle(color: Colors.orange),
+
+            // ── Action bar ────────────────────────────────────────────────
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: changed
+                      ? AppColors.primaryNavy.withValues(alpha: 0.3)
+                      : AppColors.borderSubtle,
                 ),
               ),
-            Row(
-              children: [
-                TextButton(
-                  onPressed: _saving ? null : () => setState(() => _fill(_saved)),
-                  child: const Text('Discard changes'),
-                ),
-                const Spacer(),
-                FilledButton.icon(
-                  onPressed: (_saving || !changed) ? null : () => _save(draft!),
-                  icon: _saving
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.save_rounded),
-                  label: const Text('Save'),
-                ),
-              ],
+              child: Row(
+                children: [
+                  if (changed) ...[
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFF59E0B),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text('Unsaved changes',
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textMuted,
+                            fontWeight: FontWeight.w500)),
+                  ] else
+                    const Text('No pending changes',
+                        style: TextStyle(
+                            fontSize: 13, color: AppColors.textMuted)),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: (changed && !_saving)
+                        ? () => setState(() => _fill(_saved))
+                        : null,
+                    child: const Text('Discard'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primaryNavy,
+                      disabledBackgroundColor:
+                          AppColors.borderSubtle,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: (_saving || !changed)
+                        ? null
+                        : () => _save(draft!),
+                    icon: _saving
+                        ? const SizedBox(
+                            width: 15,
+                            height: 15,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white))
+                        : const Icon(Icons.save_rounded, size: 17),
+                    label: const Text('Save rates',
+                        style: TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 22),
+
+            const SizedBox(height: 20),
+
+            // ── History ───────────────────────────────────────────────────
             _history(),
           ],
         ),
@@ -332,49 +540,243 @@ class _FareSettingsTabState extends State<FareSettingsTab> {
     );
   }
 
-  Widget _history() {
-    return _card(
-      title: 'Recent changes',
-      child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection('fare_history')
-            .orderBy('changed_at', descending: true)
-            .limit(8)
-            .snapshots(),
-        builder: (context, snap) {
-          if (snap.hasError) {
-            return const Text('Could not load history.',
-                style: TextStyle(color: AppColors.textMuted));
-          }
-          final docs = snap.data?.docs ?? const [];
-          if (docs.isEmpty) {
-            return const Text('No changes recorded yet.',
-                style: TextStyle(color: AppColors.textMuted));
-          }
-          return Column(
+  Widget _previewTable(FareConfig draft) {
+    const kms = [1, 4, 5, 10, 20, 30];
+    return Column(
+      children: [
+        // Header row
+        Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.backgroundSlate,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Row(
             children: [
-              for (final d in docs)
-                Builder(builder: (_) {
-                  final m = d.data();
-                  final n = (m['new'] as Map?) ?? const {};
-                  final ts = (m['changed_at'] as Timestamp?)?.toDate();
-                  final when = ts == null
-                      ? '...'
-                      : '${ts.year}-${ts.month.toString().padLeft(2, '0')}-${ts.day.toString().padLeft(2, '0')} '
-                          '${ts.hour.toString().padLeft(2, '0')}:${ts.minute.toString().padLeft(2, '0')}';
-                  return ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                        'Regular ₱${n['base_fare']} + ₱${n['per_km_fare']}/km, '
-                        'Discounted ₱${n['base_fare_discounted']} + ₱${n['per_km_fare_discounted']}/km '
-                        '(first ${n['base_km']} km)'),
-                    subtitle: Text('${m['changed_by'] ?? 'unknown'}  •  $when'),
-                  );
-                }),
+              Expanded(
+                  child: Text('Distance',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textMuted,
+                          letterSpacing: 0.5))),
+              Expanded(
+                  child: Text('Regular',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primaryNavy,
+                          letterSpacing: 0.5))),
+              Expanded(
+                  child: Text('Discounted',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.commuterTeal,
+                          letterSpacing: 0.5))),
             ],
-          );
-        },
+          ),
+        ),
+        const SizedBox(height: 4),
+        for (int i = 0; i < kms.length; i++)
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            decoration: BoxDecoration(
+              color:
+                  i.isEven ? Colors.white : AppColors.backgroundSlate,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text('${kms[i]} km',
+                            style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primaryNavy)),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    '₱${draft.regularForKm(kms[i]).round()}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.darkSlate),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    '₱${draft.discountedForKm(kms[i]).round()}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.commuterTeal),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _history() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.borderSubtle),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5F3FF),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.history_rounded,
+                      color: Color(0xFF7C3AED), size: 18),
+                ),
+                const SizedBox(width: 12),
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Recent Changes',
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.darkSlate)),
+                    Text('Last 8 fare rate updates',
+                        style: TextStyle(
+                            fontSize: 12, color: AppColors.textMuted)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 18),
+            child: Divider(height: 20, color: AppColors.borderSubtle),
+          ),
+          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance
+                .collection('fare_history')
+                .orderBy('changed_at', descending: true)
+                .limit(8)
+                .snapshots(),
+            builder: (context, snap) {
+              if (snap.hasError) {
+                return const Padding(
+                  padding: EdgeInsets.fromLTRB(18, 0, 18, 18),
+                  child: Text('Could not load history.',
+                      style: TextStyle(color: AppColors.textMuted)),
+                );
+              }
+              final docs = snap.data?.docs ?? const [];
+              if (docs.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.fromLTRB(18, 0, 18, 18),
+                  child: Text('No changes recorded yet.',
+                      style: TextStyle(color: AppColors.textMuted)),
+                );
+              }
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+                child: Column(
+                  children: [
+                    for (int i = 0; i < docs.length; i++)
+                      Builder(builder: (_) {
+                        final m = docs[i].data();
+                        final n = (m['new'] as Map?) ?? const {};
+                        final ts =
+                            (m['changed_at'] as Timestamp?)?.toDate();
+                        final when = ts == null
+                            ? '...'
+                            : '${ts.year}-${ts.month.toString().padLeft(2, '0')}-${ts.day.toString().padLeft(2, '0')}  ${ts.hour.toString().padLeft(2, '0')}:${ts.minute.toString().padLeft(2, '0')}';
+                        final isLast = i == docs.length - 1;
+                        return Padding(
+                          padding: EdgeInsets.only(bottom: isLast ? 0 : 10),
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppColors.backgroundSlate,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                  color: AppColors.borderSubtle),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  margin: const EdgeInsets.only(top: 2),
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.primaryNavy,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Regular ₱${n['base_fare']} + ₱${n['per_km_fare']}/km  •  '
+                                        'Discounted ₱${n['base_fare_discounted']} + ₱${n['per_km_fare_discounted']}/km  •  '
+                                        'First ${n['base_km']} km',
+                                        style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.darkSlate,
+                                            height: 1.4),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        '${m['changed_by'] ?? 'unknown'}  •  $when',
+                                        style: const TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.textMuted),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
