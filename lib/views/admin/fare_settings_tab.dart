@@ -307,14 +307,6 @@ class _FareSettingsTabState extends State<FareSettingsTab> {
               ),
             Row(
               children: [
-                OutlinedButton.icon(
-                  onPressed: _saving
-                      ? null
-                      : () => setState(() => _fill(FareConfig.defaults)),
-                  icon: const Icon(Icons.restore_rounded),
-                  label: const Text('Load LTFRB defaults'),
-                ),
-                const SizedBox(width: 10),
                 TextButton(
                   onPressed: _saving ? null : () => setState(() => _fill(_saved)),
                   child: const Text('Discard changes'),
