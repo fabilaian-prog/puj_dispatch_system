@@ -2112,7 +2112,7 @@ QueueSeeder.seedAll().then((created) async {
                         const SizedBox(height: 10),
 
                         // Passenger Seating Adjuster Bar in Modal
-                        Container(
+                        if (targetFieldName == 'active_loading_vehicle') Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 10,
                             vertical: 8,
