@@ -299,246 +299,333 @@ class _FareSettingsTabState extends State<FareSettingsTab> {
         (draft.baseFareDiscounted > draft.baseFare ||
             draft.perKmFareDiscounted > draft.perKmFare);
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 740),
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+    return LayoutBuilder(builder: (context, constraints) {
+      final wide = constraints.maxWidth >= 860;
+      return wide
+          ? _buildWideLayout(draft, changed, warn)
+          : _buildNarrowLayout(draft, changed, warn);
+    });
+  }
+
+  // ── Shared banner widgets ──────────────────────────────────────────────────
+
+  Widget _errorBanner() => Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFEF2F2),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFFECACA)),
+        ),
+        child: Row(
           children: [
-            // ── Error banner ──────────────────────────────────────────────
-            if (_error != null)
-              Container(
-                margin: const EdgeInsets.only(bottom: 14),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFEF2F2),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFFECACA)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.warning_amber_rounded,
-                        color: AppColors.errorCrimson, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                        child: Text(_error!,
-                            style: const TextStyle(
-                                fontSize: 13,
-                                color: AppColors.errorCrimson))),
-                  ],
-                ),
-              ),
-
-            // ── Warn banner ───────────────────────────────────────────────
-            if (warn)
-              Container(
-                margin: const EdgeInsets.only(bottom: 14),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFFBEB),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFFDE68A)),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.warning_amber_rounded,
-                        color: Color(0xFFD97706), size: 18),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Heads up: a discounted rate is higher than the regular rate.',
-                        style: TextStyle(
-                            fontSize: 13, color: Color(0xFF92400E)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-            // ── Regular fare ──────────────────────────────────────────────
-            _section(
-              icon: Icons.person_rounded,
-              iconColor: AppColors.primaryNavy,
-              iconBg: const Color(0xFFEFF6FF),
-              title: 'Regular Fare',
-              subtitle: 'Standard rate for all passengers',
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                      child: _fareField('Base fare', _baseCtrl)),
-                  const SizedBox(width: 14),
-                  Expanded(
-                      child:
-                          _fareField('Per extra km', _perKmCtrl)),
-                ],
-              ),
-            ),
-
-            // ── Discounted fare ───────────────────────────────────────────
-            _section(
-              icon: Icons.school_rounded,
-              iconColor: AppColors.commuterTeal,
-              iconBg: AppColors.commuterTealLight,
-              title: 'Discounted Fare',
-              subtitle: 'Students, PWDs & Senior Citizens',
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                      child: _fareField('Base fare', _baseDiscCtrl)),
-                  const SizedBox(width: 14),
-                  Expanded(
-                      child: _fareField(
-                          'Per extra km', _perKmDiscCtrl)),
-                ],
-              ),
-            ),
-
-            // ── Base distance ─────────────────────────────────────────────
-            _section(
-              icon: Icons.route_rounded,
-              iconColor: const Color(0xFF7C3AED),
-              iconBg: const Color(0xFFF5F3FF),
-              title: 'Base Distance',
-              subtitle: 'Kilometres the base fare already covers',
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  SizedBox(
-                    width: 160,
-                    child: _fareField('Base distance', _baseKmCtrl,
-                        integer: true, suffix: 'km'),
-                  ),
-                  const SizedBox(width: 14),
-                  const Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.only(bottom: 4),
-                      child: Text(
-                        'Fares are rounded up to the next whole peso.\nPartial km counts as a full km.',
-                        style: TextStyle(
-                            fontSize: 12.5,
-                            color: AppColors.textMuted,
-                            height: 1.5),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // ── Fare preview ──────────────────────────────────────────────
-            _section(
-              icon: Icons.table_chart_rounded,
-              iconColor: const Color(0xFF059669),
-              iconBg: const Color(0xFFECFDF5),
-              title: 'Live Preview',
-              subtitle: 'What commuters will see at these rates',
-              child: draft == null
-                  ? Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFEF2F2),
-                        borderRadius: BorderRadius.circular(10),
-                        border:
-                            Border.all(color: const Color(0xFFFECACA)),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.error_outline_rounded,
-                              color: AppColors.errorCrimson, size: 16),
-                          SizedBox(width: 8),
-                          Text(
-                            'Enter valid numbers above (base distance: 1–50 km).',
-                            style: TextStyle(
-                                fontSize: 13,
-                                color: AppColors.errorCrimson),
-                          ),
-                        ],
-                      ),
-                    )
-                  : _previewTable(draft),
-            ),
-
-            // ── Action bar ────────────────────────────────────────────────
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: changed
-                      ? AppColors.primaryNavy.withValues(alpha: 0.3)
-                      : AppColors.borderSubtle,
-                ),
-              ),
-              child: Row(
-                children: [
-                  if (changed) ...[
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFF59E0B),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text('Unsaved changes',
-                        style: TextStyle(
-                            fontSize: 13,
-                            color: AppColors.textMuted,
-                            fontWeight: FontWeight.w500)),
-                  ] else
-                    const Text('No pending changes',
-                        style: TextStyle(
-                            fontSize: 13, color: AppColors.textMuted)),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: (changed && !_saving)
-                        ? () => setState(() => _fill(_saved))
-                        : null,
-                    child: const Text('Discard'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primaryNavy,
-                      disabledBackgroundColor:
-                          AppColors.borderSubtle,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                    ),
-                    onPressed: (_saving || !changed)
-                        ? null
-                        : () => _save(draft!),
-                    icon: _saving
-                        ? const SizedBox(
-                            width: 15,
-                            height: 15,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white))
-                        : const Icon(Icons.save_rounded, size: 17),
-                    label: const Text('Save rates',
-                        style: TextStyle(fontWeight: FontWeight.w700)),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // ── History ───────────────────────────────────────────────────
-            _history(),
+            const Icon(Icons.warning_amber_rounded,
+                color: AppColors.errorCrimson, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+                child: Text(_error!,
+                    style: const TextStyle(
+                        fontSize: 13, color: AppColors.errorCrimson))),
           ],
         ),
-      ),
+      );
+
+  Widget _warnBanner() => Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFBEB),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFFDE68A)),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded,
+                color: Color(0xFFD97706), size: 18),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Heads up: a discounted rate is higher than the regular rate.',
+                style: TextStyle(fontSize: 13, color: Color(0xFF92400E)),
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _actionBar(FareConfig? draft, bool changed) => Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: changed
+                ? AppColors.primaryNavy.withValues(alpha: 0.3)
+                : AppColors.borderSubtle,
+          ),
+        ),
+        child: Row(
+          children: [
+            if (changed) ...[
+              Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF59E0B),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text('Unsaved changes',
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textMuted,
+                      fontWeight: FontWeight.w500)),
+            ] else
+              const Text('No pending changes',
+                  style:
+                      TextStyle(fontSize: 13, color: AppColors.textMuted)),
+            const Spacer(),
+            TextButton(
+              onPressed: (changed && !_saving)
+                  ? () => setState(() => _fill(_saved))
+                  : null,
+              child: const Text('Discard'),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primaryNavy,
+                disabledBackgroundColor: AppColors.borderSubtle,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed:
+                  (_saving || !changed) ? null : () => _save(draft!),
+              icon: _saving
+                  ? const SizedBox(
+                      width: 15,
+                      height: 15,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.save_rounded, size: 17),
+              label: const Text('Save rates',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      );
+
+  // ── Wide layout: two columns ───────────────────────────────────────────────
+
+  Widget _buildWideLayout(FareConfig? draft, bool changed, bool warn) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Left column — edit panels + action bar
+        Expanded(
+          flex: 5,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(24, 24, 12, 40),
+            children: [
+              if (_error != null) _errorBanner(),
+              if (warn) _warnBanner(),
+              _section(
+                icon: Icons.person_rounded,
+                iconColor: AppColors.primaryNavy,
+                iconBg: const Color(0xFFEFF6FF),
+                title: 'Regular Fare',
+                subtitle: 'Standard rate for all passengers',
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: _fareField('Base fare', _baseCtrl)),
+                    const SizedBox(width: 14),
+                    Expanded(child: _fareField('Per extra km', _perKmCtrl)),
+                  ],
+                ),
+              ),
+              _section(
+                icon: Icons.school_rounded,
+                iconColor: AppColors.commuterTeal,
+                iconBg: AppColors.commuterTealLight,
+                title: 'Discounted Fare',
+                subtitle: 'Students, PWDs & Senior Citizens',
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                        child: _fareField('Base fare', _baseDiscCtrl)),
+                    const SizedBox(width: 14),
+                    Expanded(
+                        child: _fareField('Per extra km', _perKmDiscCtrl)),
+                  ],
+                ),
+              ),
+              _section(
+                icon: Icons.route_rounded,
+                iconColor: const Color(0xFF7C3AED),
+                iconBg: const Color(0xFFF5F3FF),
+                title: 'Base Distance',
+                subtitle: 'Kilometres the base fare already covers',
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    SizedBox(
+                      width: 160,
+                      child: _fareField('Base distance', _baseKmCtrl,
+                          integer: true, suffix: 'km'),
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          'Fares are rounded up to the next whole peso.\nPartial km counts as a full km.',
+                          style: TextStyle(
+                              fontSize: 12.5,
+                              color: AppColors.textMuted,
+                              height: 1.5),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _actionBar(draft, changed),
+            ],
+          ),
+        ),
+
+        // Right column — preview + history
+        Expanded(
+          flex: 4,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(12, 24, 24, 40),
+            children: [
+              _section(
+                icon: Icons.table_chart_rounded,
+                iconColor: const Color(0xFF059669),
+                iconBg: const Color(0xFFECFDF5),
+                title: 'Live Preview',
+                subtitle: 'What commuters will see at these rates',
+                child: draft == null
+                    ? _previewError()
+                    : _previewTable(draft),
+              ),
+              _history(),
+            ],
+          ),
+        ),
+      ],
     );
   }
+
+  // ── Narrow layout: single column ──────────────────────────────────────────
+
+  Widget _buildNarrowLayout(FareConfig? draft, bool changed, bool warn) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+      children: [
+        if (_error != null) _errorBanner(),
+        if (warn) _warnBanner(),
+        _section(
+          icon: Icons.person_rounded,
+          iconColor: AppColors.primaryNavy,
+          iconBg: const Color(0xFFEFF6FF),
+          title: 'Regular Fare',
+          subtitle: 'Standard rate for all passengers',
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _fareField('Base fare', _baseCtrl)),
+              const SizedBox(width: 14),
+              Expanded(child: _fareField('Per extra km', _perKmCtrl)),
+            ],
+          ),
+        ),
+        _section(
+          icon: Icons.school_rounded,
+          iconColor: AppColors.commuterTeal,
+          iconBg: AppColors.commuterTealLight,
+          title: 'Discounted Fare',
+          subtitle: 'Students, PWDs & Senior Citizens',
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _fareField('Base fare', _baseDiscCtrl)),
+              const SizedBox(width: 14),
+              Expanded(child: _fareField('Per extra km', _perKmDiscCtrl)),
+            ],
+          ),
+        ),
+        _section(
+          icon: Icons.route_rounded,
+          iconColor: const Color(0xFF7C3AED),
+          iconBg: const Color(0xFFF5F3FF),
+          title: 'Base Distance',
+          subtitle: 'Kilometres the base fare already covers',
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              SizedBox(
+                width: 140,
+                child: _fareField('Base distance', _baseKmCtrl,
+                    integer: true, suffix: 'km'),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    'Fares are rounded up to the next whole peso.\nPartial km counts as a full km.',
+                    style: TextStyle(
+                        fontSize: 12.5,
+                        color: AppColors.textMuted,
+                        height: 1.5),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        _section(
+          icon: Icons.table_chart_rounded,
+          iconColor: const Color(0xFF059669),
+          iconBg: const Color(0xFFECFDF5),
+          title: 'Live Preview',
+          subtitle: 'What commuters will see at these rates',
+          child: draft == null ? _previewError() : _previewTable(draft),
+        ),
+        _actionBar(draft, changed),
+        const SizedBox(height: 20),
+        _history(),
+      ],
+    );
+  }
+
+  Widget _previewError() => Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFEF2F2),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFFECACA)),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.error_outline_rounded,
+                color: AppColors.errorCrimson, size: 16),
+            SizedBox(width: 8),
+            Text(
+              'Enter valid numbers above (base distance: 1–50 km).',
+              style: TextStyle(fontSize: 13, color: AppColors.errorCrimson),
+            ),
+          ],
+        ),
+      );
 
   Widget _previewTable(FareConfig draft) {
     const kms = [1, 4, 5, 10, 20, 30];
