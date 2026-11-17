@@ -1295,11 +1295,8 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
               return true;
             }).toList();
 
-            return Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1200),
-                child: ListView(
-                  padding: const EdgeInsets.only(left: 18, right: 18, top: 18, bottom: 90),
+            return ListView(
+              padding: const EdgeInsets.only(left: 18, right: 18, top: 18, bottom: 90),
                   children: [
                     Row(
                       children: [
@@ -1348,8 +1345,8 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                       GridView.builder(
                         physics: const NeverScrollableScrollPhysics(),
                         shrinkWrap: true,
-                        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 580,
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
                           mainAxisExtent: 145,
                           crossAxisSpacing: 14,
                           mainAxisSpacing: 14,
@@ -1360,12 +1357,10 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                           return _buildDriverCard(doc, hasVehicleOf, inGrid: true);
                         },
                       )
-                    else
-                      ...docs.map((doc) => _buildDriverCard(doc, hasVehicleOf, inGrid: false)),
-                  ],
-                ),
-              ),
-            );
+                   else
+                     ...docs.map((doc) => _buildDriverCard(doc, hasVehicleOf, inGrid: false)),
+             ],
+           );
           },
         );
       },
@@ -3940,11 +3935,8 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
               ),
             );
 
-            return Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1240),
-                child: ListView(
-                  padding: EdgeInsets.fromLTRB(pad, 16, pad, 96),
+            return ListView(
+              padding: EdgeInsets.fromLTRB(pad, 16, pad, 96),
                   children: [
                     if (roomy)
                       Row(children: [
@@ -4004,8 +3996,8 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                       GridView.builder(
                         physics: const NeverScrollableScrollPhysics(),
                         shrinkWrap: true,
-                        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 560,
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
                           mainAxisExtent: 176,
                           crossAxisSpacing: 14,
                           mainAxisSpacing: 14,
@@ -4021,9 +4013,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                             height: 176,
                             child: _buildCoopVehicleTile(doc.data() as Map<String, dynamic>, doc.id, inGrid: true),
                           )).expand((w) => [w, const SizedBox(height: 12)]),
-                  ],
-                ),
-              ),
+              ],
             );
           },
         );
@@ -4187,13 +4177,13 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
           return true;
         }).toList();
 
-        return Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1000),
-            child: ListView(
-              padding: const EdgeInsets.all(18),
-              children: [
-                Container(
+        return LayoutBuilder(builder: (context, constraints) {
+          final bool isWide = constraints.maxWidth >= 1100;
+          final double pad = constraints.maxWidth >= 850 ? 28 : 18;
+          return ListView(
+            padding: EdgeInsets.fromLTRB(pad, 18, pad, 90),
+            children: [
+              Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -4260,89 +4250,119 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
-
-                if (docs.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(28.0),
-                    child: Center(
-                      child: Text('No dispatchers match the filter criteria.', style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+            if (docs.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(28.0),
+                child: Center(
+                  child: Text('No dispatchers match the filter criteria.',
+                      style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+                ),
+              )
+            else if (isWide)
+              GridView.builder(
+                physics: const NeverScrollableScrollPhysics(),
+                shrinkWrap: true,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisExtent: 90,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 10,
+                ),
+                itemCount: docs.length,
+                itemBuilder: (context, index) {
+                  final doc = docs[index];
+                  final d = doc.data() as Map<String, dynamic>;
+                  final name = (d['full_name'] ?? 'Terminal Officer').toString();
+                  final contact = (d['contact_number'] ?? 'N/A').toString();
+                  final rawTerminal = (d['assigned_terminal'] ?? 'General Post').toString();
+                  final rawRoute = (d['assigned_route'] ?? 'All Routes').toString();
+                  final terminal = _formatTerminalName(rawTerminal);
+                  final route = _formatRouteName(rawRoute);
+                  final pin = (d['pin_code'] ?? '****').toString();
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.borderSubtle),
                     ),
-                  )
-                else
-                  ...docs.map((doc) {
-                    final d = doc.data() as Map<String, dynamic>;
-                    final name = (d['full_name'] ?? 'Terminal Officer').toString();
-                    final contact = (d['contact_number'] ?? 'N/A').toString();
-                    final rawTerminal = (d['assigned_terminal'] ?? 'General Post').toString();
-                    final rawRoute = (d['assigned_route'] ?? 'All Routes').toString();
-                    final terminal = _formatTerminalName(rawTerminal);
-                    final route = _formatRouteName(rawRoute);
-                    final pin = (d['pin_code'] ?? '****').toString();
-
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.borderSubtle),
+                    child: ListTile(
+                      dense: true,
+                      leading: CircleAvatar(
+                        backgroundColor: AppColors.primaryNavy.withValues(alpha: 0.08),
+                        child: const Icon(Icons.person_pin_circle_rounded, color: AppColors.primaryNavy, size: 22),
                       ),
-                      child: ListTile(
-                        dense: true,
-                        leading: CircleAvatar(
-                          backgroundColor: AppColors.primaryNavy.withOpacity(0.08),
-                          child: const Icon(Icons.person_pin_circle_rounded, color: AppColors.primaryNavy, size: 22),
-                        ),
-                        title: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5, color: AppColors.darkSlate)),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                OutlinedButton.icon(
-                                  icon: const Icon(Icons.campaign_rounded, size: 13, color: Color(0xFFD97706)),
-                                  label: const Text('Notice', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
-                                  style: OutlinedButton.styleFrom(
-                                    side: const BorderSide(color: Color(0xFFFDE68A)),
-                                    backgroundColor: const Color(0xFFFFFBEB),
-                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                                    minimumSize: Size.zero,
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                  onPressed: () => _showCreateNoticeModal(
-                                    preselectedUserId: doc.id,
-                                    preselectedUserName: name,
-                                    preselectedRole: 'DISPATCHER',
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                OutlinedButton(
-                                  style: OutlinedButton.styleFrom(
-                                    side: const BorderSide(color: AppColors.borderSubtle),
-                                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                                    minimumSize: Size.zero,
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                  onPressed: () => _showResetPinModal(
-                                    targetUserId: doc.id,
-                                    targetUserName: name,
-                                    targetRole: 'Dispatcher',
-                                    currentPin: pin,
-                                  ),
-                                  child: const Text('Reset PIN', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppColors.primaryNavy)),
-                                ),
-                              ],
+                      title: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(child: Text(name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5, color: AppColors.darkSlate), overflow: TextOverflow.ellipsis)),
+                          Row(mainAxisSize: MainAxisSize.min, children: [
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.campaign_rounded, size: 13, color: Color(0xFFD97706)),
+                              label: const Text('Notice', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
+                              style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFFFDE68A)), backgroundColor: const Color(0xFFFFFBEB), padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                              onPressed: () => _showCreateNoticeModal(preselectedUserId: doc.id, preselectedUserName: name, preselectedRole: 'DISPATCHER'),
                             ),
-                          ],
-                        ),
-                        subtitle: Text('Terminal: $terminal\nRoute: $route • Ph: $contact', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                            const SizedBox(width: 6),
+                            OutlinedButton(
+                              style: OutlinedButton.styleFrom(side: const BorderSide(color: AppColors.borderSubtle), padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                              onPressed: () => _showResetPinModal(targetUserId: doc.id, targetUserName: name, targetRole: 'Dispatcher', currentPin: pin),
+                              child: const Text('Reset PIN', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppColors.primaryNavy)),
+                            ),
+                          ]),
+                        ],
                       ),
-                    );
-                  }),
-              ],
-            ),
-          ),
+                      subtitle: Text('Terminal: $terminal\nRoute: $route • Ph: $contact', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                    ),
+                  );
+                },
+              )
+            else
+              ...docs.map((doc) {
+                final d = doc.data() as Map<String, dynamic>;
+                final name = (d['full_name'] ?? 'Terminal Officer').toString();
+                final contact = (d['contact_number'] ?? 'N/A').toString();
+                final rawTerminal = (d['assigned_terminal'] ?? 'General Post').toString();
+                final rawRoute = (d['assigned_route'] ?? 'All Routes').toString();
+                final terminal = _formatTerminalName(rawTerminal);
+                final route = _formatRouteName(rawRoute);
+                final pin = (d['pin_code'] ?? '****').toString();
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.borderSubtle),
+                  ),
+                  child: ListTile(
+                    dense: true,
+                    leading: CircleAvatar(
+                      backgroundColor: AppColors.primaryNavy.withValues(alpha: 0.08),
+                      child: const Icon(Icons.person_pin_circle_rounded, color: AppColors.primaryNavy, size: 22),
+                    ),
+                    title: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                      Text(name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5, color: AppColors.darkSlate)),
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.campaign_rounded, size: 13, color: Color(0xFFD97706)),
+                          label: const Text('Notice', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
+                          style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFFFDE68A)), backgroundColor: const Color(0xFFFFFBEB), padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                          onPressed: () => _showCreateNoticeModal(preselectedUserId: doc.id, preselectedUserName: name, preselectedRole: 'DISPATCHER'),
+                        ),
+                        const SizedBox(width: 6),
+                        OutlinedButton(
+                          style: OutlinedButton.styleFrom(side: const BorderSide(color: AppColors.borderSubtle), padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                          onPressed: () => _showResetPinModal(targetUserId: doc.id, targetUserName: name, targetRole: 'Dispatcher', currentPin: pin),
+                          child: const Text('Reset PIN', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppColors.primaryNavy)),
+                        ),
+                      ]),
+                    ]),
+                    subtitle: Text('Terminal: $terminal\nRoute: $route • Ph: $contact', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                  ),
+                );
+              }),
+          ],
         );
+        });
       },
     );
   }
@@ -4389,12 +4409,12 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
           return true;
         }).toList();
 
-        return Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1000),
-            child: ListView(
-              padding: const EdgeInsets.all(18),
-              children: [
+        return LayoutBuilder(builder: (context, constraints) {
+          final bool isWide = constraints.maxWidth >= 1100;
+          final double pad = constraints.maxWidth >= 850 ? 28 : 18;
+          return ListView(
+            padding: EdgeInsets.fromLTRB(pad, 18, pad, 40),
+            children: [
                 Row(
                   children: [
                     _buildKpiCard('QUEUE OVERRIDES', '${rawDocs.length}', Icons.swap_vert_circle_rounded, const Color(0xFFD97706)),
@@ -4598,13 +4618,12 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                       ),
                     );
                   }),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
+           ],
+         );
+       });
+     },
+   );
+ }
 
   // ===========================================================================
   // TAB 6: COMPLAINTS & INCIDENTS (DESKTOP OPTIMIZED)
@@ -5171,11 +5190,10 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                   return dtB.compareTo(dtA);
                 });
 
-                return Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1200),
-                    child: ListView(
-                      padding: const EdgeInsets.all(18),
+                return LayoutBuilder(builder: (context, lc) {
+                  final double pad = lc.maxWidth >= 850 ? 28 : 18;
+                  return ListView(
+                    padding: EdgeInsets.fromLTRB(pad, 18, pad, 90),
                       children: [
                         Row(
                           children: [
@@ -5317,8 +5335,8 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                           GridView.builder(
                             physics: const NeverScrollableScrollPhysics(),
                             shrinkWrap: true,
-                            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                              maxCrossAxisExtent: 580,
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
                               mainAxisExtent: 160,
                               crossAxisSpacing: 14,
                               mainAxisSpacing: 14,
@@ -5331,10 +5349,9 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                           )
                         else
                           ...filteredDocs.map((doc) => _buildComplaintCard(doc, inGrid: false)),
-                      ],
-                    ),
-                  ),
-                );
+                    ],
+                  );
+                });
               },
             );
           },
@@ -6464,7 +6481,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
         final pad = wide ? 28.0 : 16.0;
 
         final cols = w >= 1000 ? 4 : 2;
-        final inner = (w.clamp(0, 1240) as num).toDouble() - pad * 2;
+        final inner = w - pad * 2;
         final tileW = (inner - 10 * (cols - 1)) / cols;
 
         Widget tile(Widget t) => SizedBox(width: tileW, child: t);
@@ -6574,14 +6591,9 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
           );
         }
 
-        return Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1240),
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(pad, 18, pad, 32),
-              children: [content],
-            ),
-          ),
+        return ListView(
+          padding: EdgeInsets.fromLTRB(pad, 18, pad, 32),
+          children: [content],
         );
       },
     );

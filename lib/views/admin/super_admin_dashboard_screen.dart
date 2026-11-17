@@ -1432,8 +1432,8 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                             physics: const NeverScrollableScrollPhysics(),
                             shrinkWrap: true,
                             gridDelegate:
-                                const SliverGridDelegateWithMaxCrossAxisExtent(
-                              maxCrossAxisExtent: 580,
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
                               mainAxisExtent: 195,
                               crossAxisSpacing: 14,
                               mainAxisSpacing: 14,
@@ -2211,11 +2211,11 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                     physics: const NeverScrollableScrollPhysics(),
                     shrinkWrap: true,
                     gridDelegate:
-                        const SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: 600,
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
                       mainAxisExtent: 180,
                       crossAxisSpacing: 12,
-                      mainAxisSpacing: 0,
+                      mainAxisSpacing: 10,
                     ),
                     itemCount: filtered.length,
                     itemBuilder: (_, i) => complaintCard(filtered[i]),
@@ -2404,8 +2404,8 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
               if (isWide) {
                 return GridView.builder(
                   padding: EdgeInsets.fromLTRB(pad, 16, pad, 40),
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 580,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
                     mainAxisExtent: 130,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 10,
