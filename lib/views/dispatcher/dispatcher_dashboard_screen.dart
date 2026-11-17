@@ -4529,23 +4529,26 @@ QueueSeeder.seedAll().then((created) async {
                                           ),
                                         ),
                                         const SizedBox(width: 6),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 5,
-                                            vertical: 1.5,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFEFF6FF),
-                                            borderRadius: BorderRadius.circular(
-                                              4,
+                                        Flexible(
+                                          flex: 0,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 5,
+                                              vertical: 1.5,
                                             ),
-                                          ),
-                                          child: const Text(
-                                            'DISPATCHED',
-                                            style: TextStyle(
-                                              fontSize: 10.5,
-                                              fontWeight: FontWeight.w800,
-                                              color: Color(0xFF1D4ED8),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFEFF6FF),
+                                              borderRadius: BorderRadius.circular(
+                                                4,
+                                              ),
+                                            ),
+                                            child: const Text(
+                                              'DISPATCHED',
+                                              style: TextStyle(
+                                                fontSize: 10.5,
+                                                fontWeight: FontWeight.w800,
+                                                color: Color(0xFF1D4ED8),
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -5172,6 +5175,8 @@ QueueSeeder.seedAll().then((created) async {
                                           '_',
                                           ' ',
                                         ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w800,
