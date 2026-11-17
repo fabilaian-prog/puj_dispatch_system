@@ -1692,6 +1692,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
     final lastNameController = TextEditingController();
     final middleInitialController = TextEditingController();
     final usernameController = TextEditingController();
+    final phoneController = TextEditingController();
     final licenseController = TextEditingController();
     final pinController = TextEditingController();
     final confirmPinController = TextEditingController();
@@ -2146,6 +2147,19 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                           const SizedBox(height: 10),
 
                           TextFormField(
+                            controller: phoneController,
+                            keyboardType: TextInputType.phone,
+                            style: const TextStyle(fontSize: 14),
+                            decoration: _buildInputDeco('Contact Number *', Icons.phone_outlined, hint: '09XXXXXXXXX'),
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                              LengthLimitingTextInputFormatter(11),
+                            ],
+                            validator: (v) => (v == null || v.trim().isEmpty) ? 'Contact number is required' : null,
+                          ),
+                          const SizedBox(height: 10),
+
+                          TextFormField(
                             controller: licenseController,
                             textCapitalization: TextCapitalization.characters,
                             style: const TextStyle(fontSize: 14, fontFamily: 'monospace', fontWeight: FontWeight.w700),
@@ -2458,6 +2472,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                                                 'last_name': lastName,
                                                 'middle_initial': middleInitial,
                                                 'sex': selectedSex,
+                                                'contact_number': phoneController.text.trim(),
                                                 'license_number': licenseNo.isEmpty ? null : licenseNo,
                                                 'license_card_base64': base64Card,
                                                 'is_license_verified': base64Card != null && isLicenseVerified,
