@@ -920,13 +920,18 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
           child: Dialog.fullscreen(
             backgroundColor: const Color(0xFF1E3A8A),
             child: SafeArea(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const SizedBox(height: 20),
+              child: LayoutBuilder(
+                builder: (context, constraints) => SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: 20),
                     Center(
                       child: Container(
                         width: 88,
@@ -1035,8 +1040,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                         },
                       ),
                     ),
-                    const SizedBox(height: 16),
-                  ],
+                        const SizedBox(height: 16),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
