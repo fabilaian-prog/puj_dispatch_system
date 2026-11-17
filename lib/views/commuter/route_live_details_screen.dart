@@ -1172,19 +1172,42 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
                         SizedBox(height: 7 * s),
                         _buildDetailRow(
                             Icons.speed_rounded,
-                            'Hardware Speed',
-                            signalLost ? 'No signal' : '$speed km/h',
+                            'Last speed',
+                            () {
+                              if (!signalLost) return '$speed km/h';
+                              // Use the most recent cached speed sample
+                              final hist = _speedHistory[vehicleId];
+                              final last = hist != null && hist.isNotEmpty
+                                  ? hist.last
+                                  : speed.toDouble();
+                              return last > 0
+                                  ? '${last.toStringAsFixed(0)} km/h (last known)'
+                                  : 'Stopped (last known)';
+                            }(),
                             valueColor: signalLost
                                 ? const Color(0xFF64748B)
                                 : const Color(0xFF047857)),
                       ],
 
-                      if (signalLost)
-                          _buildSignalLostRows(data, vehicleId, s)
-                        else if (_isGuinsangan && _isApproachingData(data))
-                          _buildApproachEtaRows(data, vehicleId, s)
-                        else
-                          _buildPinEtaRows(data, vehicleId, speed, s),
+                      if (signalLost) ...[
+                        _buildSignalLostRows(data, vehicleId, s),
+                        // Still show pin ETA using last known speed if pin is set
+                        if (_pinnedStop != null)
+                          _buildPinEtaRows(
+                            data,
+                            vehicleId,
+                            () {
+                              final hist = _speedHistory[vehicleId];
+                              return (hist != null && hist.isNotEmpty)
+                                  ? hist.last
+                                  : speed;
+                            }(),
+                            s,
+                          ),
+                      ] else if (_isGuinsangan && _isApproachingData(data))
+                        _buildApproachEtaRows(data, vehicleId, s)
+                      else
+                        _buildPinEtaRows(data, vehicleId, speed, s),
 
                       SizedBox(height: 16 * s),
 
