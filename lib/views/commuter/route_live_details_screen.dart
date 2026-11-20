@@ -1471,7 +1471,7 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
             SizedBox(width: 7 * s),
             Expanded(
               child: Text(
-                'EN-ROUTE ON ROAD (${enRouteDocs.length})',
+                'JEEP ON MAP (${enRouteDocs.length})',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
