@@ -1936,7 +1936,7 @@ QueueSeeder.seedAll().then((created) async {
                                         child: Text(
                                           isStandby
                                               ? 'Standby • Slot #$position'
-                                              : 'On-Deck • Slot #$position',
+                                              : 'Jeepney Line • Slot #$position',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: AppTypography.outdoorBody(
@@ -2725,7 +2725,7 @@ QueueSeeder.seedAll().then((created) async {
               'updated_at': FieldValue.serverTimestamp(),
             }, SetOptions(merge: true));
             feedbackMessage =
-                'Unit $vehicleId placed in On-Deck Slot #${occupiedSlots + 1}!';
+                'Unit $vehicleId placed in Jeepney Line Slot #${occupiedSlots + 1}!';
           }
 
           // Only two-group routes have a Dalipe standby pool to clear.
@@ -2780,7 +2780,7 @@ QueueSeeder.seedAll().then((created) async {
               'queued_vehicles': FieldValue.arrayUnion([vehicleId]),
               'updated_at': FieldValue.serverTimestamp(),
             }, SetOptions(merge: true));
-            feedbackMessage = 'Unit $vehicleId placed in On-Deck Queue!';
+            feedbackMessage = 'Unit $vehicleId placed in Jeepney Line!';
           }
         }
 
@@ -2996,7 +2996,7 @@ QueueSeeder.seedAll().then((created) async {
           'updated_at': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
         feedback =
-            'Unit $vehicleId placed in On-Deck Slot #${occupiedSlots + 1} at Robinsons.';
+            'Unit $vehicleId placed in Jeepney Line Slot #${occupiedSlots + 1} at Robinsons.';
       }
 
       transaction.update(dalipeQueueRef, {
@@ -3133,7 +3133,7 @@ QueueSeeder.seedAll().then((created) async {
               'updated_at': FieldValue.serverTimestamp(),
             }, SetOptions(merge: true));
             feedbackMessage =
-                'Unit $vehicleId ($driverName - $vehicleGroup) queued in On-Deck line!';
+                'Unit $vehicleId ($driverName - $vehicleGroup) queued in Jeepney Line!';
           }
         } else {
           transaction.set(queueRef, {
@@ -3420,8 +3420,8 @@ QueueSeeder.seedAll().then((created) async {
                             ),
                             Text(
                               _isRobinsonsTerminal
-                                  ? 'ON-DECK (${queuedList.length} / 3 SLOTS)'
-                                  : 'ON-DECK LINE (${queuedList.length})',
+                                  ? 'JEEPNEY LINE (${queuedList.length} / 3 SLOTS)'
+                                  : 'JEEPNEY LINE (${queuedList.length})',
                               style: AppTypography.outdoorHeading(fontSize: 13),
                             ),
                           ],
@@ -3449,7 +3449,7 @@ QueueSeeder.seedAll().then((created) async {
                         onPressed: () => _showReorderListModal(
                           targetDocId: _currentQueueDocId,
                           targetFieldName: 'queued_vehicles',
-                          listTitle: 'On-Deck Line',
+                          listTitle: 'Jeepney Line',
                           currentList: queuedList,
                         ),
                       ),
@@ -3462,7 +3462,7 @@ QueueSeeder.seedAll().then((created) async {
                       padding: const EdgeInsets.symmetric(vertical: 10.0),
                       child: Center(
                         child: Text(
-                          'No vehicles queued behind Spot 1.',
+                          'No vehicles in the Jeepney Line.',
                           textAlign: TextAlign.center,
                           style: AppTypography.outdoorBody(fontSize: 13),
                         ),
@@ -3931,7 +3931,7 @@ QueueSeeder.seedAll().then((created) async {
   }
 
   // ===========================================================================
-  // ON-DECK QUEUE UNIT TILE
+  // JEEPNEY LINE UNIT TILE
   // ===========================================================================
   Widget _buildDirectQueueUnitTile(
     String vehicleId,
@@ -4010,7 +4010,7 @@ QueueSeeder.seedAll().then((created) async {
                             _rotationBadge(vehicleId, line: line),
                             if (isFrontOfQueue)
                               const Text(
-                                'Front of Queue • Next to load into bay',
+                                'First in Line • Next to load into bay',
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: Color(0xFF059669),

@@ -1060,7 +1060,7 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                             icon: Icons.airline_seat_recline_normal_rounded,
                           ),
                           CoopPill(
-                            '$queued on-deck',
+                            '$queued in line',
                             tone:
                                 queued > 0 ? CoopTone.info : CoopTone.neutral,
                           ),

@@ -1240,7 +1240,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
                                 qBorder = const Color(0xFFBFDBFE);
                                 qText = const Color(0xFF1D4ED8);
                                 qIcon = Icons.hourglass_top_rounded;
-                                qBadge = 'ON-DECK QUEUE • SLOT #$onDeckPos';
+                                qBadge = 'JEEPNEY LINE • SLOT #$onDeckPos';
                                 qSub = 'Slot $onDeckPos of $totalOnDeck in line-up at $termClean';
                               } else {
                                 qBg = const Color(0xFFFFFBEB);

@@ -2416,7 +2416,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       hudSub = 'Hidden from passengers • Awaiting dispatcher departure signal';
     } else if (isInQueue) {
       hudIcon = Icons.lock_rounded;
-      hudTitle = 'ON-DECK QUEUE • SLOT #$queueSlot';
+      hudTitle = 'JEEPNEY LINE • SLOT #$queueSlot';
       hudSub = 'In terminal line-up • Locked until dispatched';
     } else if (isStandby) {
       hudIcon = Icons.local_parking_rounded;
@@ -2945,7 +2945,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       heroAccent = const Color(0xFF2563EB);
       heroTitle = queueIndex == 0
           ? '#1 NEXT TO BOARD BAY'
-          : '#${queueIndex + 1} IN ON-DECK QUEUE';
+          : '#${queueIndex + 1} IN JEEPNEY LINE';
       heroSub = queueIndex == 0
           ? 'Prepare vehicle. Pull into Spot 1 as soon as bay departs.'
           : 'Hold position in queue. Advances forward automatically.';
@@ -3234,12 +3234,12 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
               isSelf: selfAtSpot1, cfg: cfg, expectedGroup: bayGroup),
         const SizedBox(height: 12),
         _buildStageHeader(
-          'Stage 2 • On-Deck Queue (${queuedList.where(mine).length})${suffix(bayGroup)}',
+          'Stage 2 • Jeepney Line (${queuedList.where(mine).length})${suffix(bayGroup)}',
           const Color(0xFF2563EB),
         ),
         const SizedBox(height: 6),
         if (!queuedList.any(mine))
-          _buildEmptyNotice('No units waiting in on-deck line.')
+          _buildEmptyNotice('No units waiting in the Jeepney Line.')
         else
           ...queuedList.asMap().entries.where((e) => mine(e.value)).map((entry) {
             final pos = entry.key + 1; // real position in the terminal line
@@ -3602,8 +3602,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                   const SizedBox(height: 2),
                   Text(
                     g.isDirect
-                        ? 'Flow: Dalipe Spot 1 → On-Deck → departs Direct'
-                        : 'Flow: Dalipe Standby → called → Robinsons Spot 1 → On-Deck',
+                        ? 'Flow: Dalipe Spot 1 → Jeepney Line → departs Direct'
+                        : 'Flow: Dalipe Standby → called → Robinsons Spot 1 → Jeepney Line',
                     style: const TextStyle(
                         fontSize: 10, color: AppColors.textMuted),
                   ),

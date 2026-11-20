@@ -1581,11 +1581,11 @@ class _RouteLiveDetailsScreenState extends State<RouteLiveDetailsScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'TERMINAL LINE-UP (ON-DECK & STANDBY)',
+          'TERMINAL LINE-UP (JEEPNEY LINE & STANDBY)',
           style: AppTypography.outdoorBody(fontSize: 13 * s, fontWeight: FontWeight.w800),
         ),
         SizedBox(height: 8 * s),
-        ...queuedList.map((item) => _buildQueueTile(item.toString(), 'On-Deck', const Color(0xFF2563EB))),
+        ...queuedList.map((item) => _buildQueueTile(item.toString(), 'Jeepney Line', const Color(0xFF2563EB))),
         ...stagedList.map((item) => _buildQueueTile(item.toString(), _isGuinsangan ? 'Holding for Robinsons (not boarding)' : 'Standby', const Color(0xFFD97706))),
       ],
     );
