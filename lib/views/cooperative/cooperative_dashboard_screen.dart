@@ -4273,6 +4273,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                   final doc = docs[index];
                   final d = doc.data() as Map<String, dynamic>;
                   final name = (d['full_name'] ?? 'Terminal Officer').toString();
+                  final username = (d['username'] ?? '').toString();
                   final contact = (d['contact_number'] ?? 'N/A').toString();
                   final rawTerminal = (d['assigned_terminal'] ?? 'General Post').toString();
                   final rawRoute = (d['assigned_route'] ?? 'All Routes').toString();
@@ -4311,7 +4312,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                           ]),
                         ],
                       ),
-                      subtitle: Text('Terminal: $terminal\nRoute: $route • Ph: $contact', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                      subtitle: Text('${username.isNotEmpty ? '@$username  •  ' : ''}Terminal: $terminal\nRoute: $route • Ph: $contact', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
                     ),
                   );
                 },
@@ -4320,6 +4321,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
               ...docs.map((doc) {
                 final d = doc.data() as Map<String, dynamic>;
                 final name = (d['full_name'] ?? 'Terminal Officer').toString();
+                final username = (d['username'] ?? '').toString();
                 final contact = (d['contact_number'] ?? 'N/A').toString();
                 final rawTerminal = (d['assigned_terminal'] ?? 'General Post').toString();
                 final rawRoute = (d['assigned_route'] ?? 'All Routes').toString();
@@ -4356,7 +4358,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                         ),
                       ]),
                     ]),
-                    subtitle: Text('Terminal: $terminal\nRoute: $route • Ph: $contact', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                    subtitle: Text('${username.isNotEmpty ? '@$username  •  ' : ''}Terminal: $terminal\nRoute: $route • Ph: $contact', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
                   ),
                 );
               }),
