@@ -748,7 +748,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                               ],
                             ),
                             Text(
-                              'ID: $driverId • @$username',
+                              '@$username',
                               style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
                             ),
                           ],
@@ -1433,7 +1433,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                             ],
                           ),
                           Text(
-                            'ID: ${doc.id} • @$username',
+                            '@$username',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted),
