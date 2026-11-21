@@ -1026,12 +1026,7 @@ class _RotationMasterListTabState extends State<RotationMasterListTab> {
                       color: AppColors.primaryNavy),
                   onSelected: (v) {
                     final target = v == 'direct' ? g.key : other;
-                    _run(
-                      () => RotationRepo.setDirectGroup(widget.coopId,
-                          widget.routeId, widget.actorName, target),
-                      '${groupLabel(target)} is now Dalipe Direct; '
-                      '${groupLabel(target == g.key ? other : g.key)} goes to Robinsons.',
-                    );
+                    _confirmAndSwitchDirectGroup(target, other);
                   },
                   itemBuilder: (_) => [
                     if (!g.isDirect)
@@ -1080,6 +1075,204 @@ class _RotationMasterListTabState extends State<RotationMasterListTab> {
             ),
         ],
       ),
+    );
+  }
+
+  // ── Group switch guard ────────────────────────────────────────────────────
+  /// Called when the coop taps the swap-groups popup for a twoGroupRobinsons
+  /// route. Reads every Dalipe queue document for this route. If any vehicles
+  /// are still in the queue it blocks the switch and offers to clear them first;
+  /// otherwise it shows a confirmation dialog before proceeding.
+  Future<void> _confirmAndSwitchDirectGroup(
+      String targetGroupKey, String otherGroupKey) async {
+    if (!mounted) return;
+
+    final p = RouteProcesses.of(widget.routeId);
+    if (p == null) return;
+
+    // ── 1. Read all Dalipe queue docs for this route ──────────────────────
+    final db = FirebaseFirestore.instance;
+    final suffix = p.suffix; // e.g. "GUINSANGAN"
+    final dalipeDocIds = [
+      'TERM_DALIPE_1_$suffix',
+      'TERM_DALIPE_2_$suffix',
+    ];
+
+    final snaps = await Future.wait(
+      dalipeDocIds.map((id) => db.collection('terminals_queue').doc(id).get()),
+    );
+
+    // Collect all occupied vehicles across both Dalipe docs.
+    final Map<String, List<String>> queuedPerDoc = {};
+    final Map<String, String?> activePerDoc = {};
+    bool hasBlockingUnits = false;
+
+    for (int i = 0; i < snaps.length; i++) {
+      final data = snaps[i].data();
+      if (data == null) continue;
+      final docId = dalipeDocIds[i];
+      final active = (data['active_loading_vehicle'] ?? '').toString().trim();
+      final queued = (data['queued_vehicles'] as List<dynamic>? ?? [])
+          .map((e) => e.toString())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      final standby = (data['standby_staged_vehicles'] as List<dynamic>? ?? [])
+          .map((e) => e.toString())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      final allInDoc = [
+        if (active.isNotEmpty && active != 'None') active,
+        ...queued,
+        ...standby,
+      ];
+      if (allInDoc.isNotEmpty) hasBlockingUnits = true;
+      queuedPerDoc[docId] = allInDoc;
+      activePerDoc[docId] = active.isNotEmpty && active != 'None' ? active : null;
+    }
+
+    if (!mounted) return;
+
+    final targetLabel = groupLabel(targetGroupKey);
+    final otherLabel = groupLabel(otherGroupKey);
+
+    // ── 2a. Queue is occupied → block with clear-or-cancel dialog ─────────
+    if (hasBlockingUnits) {
+      final totalCount =
+          queuedPerDoc.values.fold<int>(0, (s, l) => s + l.length);
+      final proceed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          title: Row(children: [
+            const Icon(Icons.warning_amber_rounded,
+                color: Color(0xFFD97706), size: 22),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text('Cannot Switch Groups',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+            ),
+          ]),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'There ${totalCount == 1 ? 'is' : 'are'} $totalCount jeepney${totalCount == 1 ? '' : 's'} '
+                'currently in the terminal queue.',
+                style: const TextStyle(fontSize: 13.5),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'The group rotation cannot be switched while units are still '
+                'waiting in the terminal. You can remove all queued units first, '
+                'then the switch will proceed.',
+                style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.delete_sweep_rounded, size: 16),
+              label: const Text('Remove All & Switch',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.errorCrimson,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true || !mounted) return;
+
+      // Clear all Dalipe queue docs atomically.
+      final batch = db.batch();
+      for (final docId in dalipeDocIds) {
+        batch.set(
+          db.collection('terminals_queue').doc(docId),
+          {
+            'active_loading_vehicle': 'None',
+            'queued_vehicles': [],
+            'standby_staged_vehicles': [],
+            'boarding_started_at': FieldValue.delete(),
+            'updated_at': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      }
+      // Also reset vehicle statuses for every cleared unit.
+      for (final ids in queuedPerDoc.values) {
+        for (final vid in ids) {
+          batch.update(db.collection('vehicles_live').doc(vid), {
+            'current_status': 'STANDBY',
+            'is_dispatched': false,
+            'staged_at_dalipe': false,
+            'called_by_robinsons': false,
+            'updated_at': FieldValue.serverTimestamp(),
+          });
+        }
+      }
+      await batch.commit();
+    } else {
+      // ── 2b. Queue is clear → ask for confirmation ───────────────────────
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          title: Row(children: [
+            const Icon(Icons.swap_horiz_rounded,
+                color: AppColors.primaryNavy, size: 22),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text('Switch Group Rotation?',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+            ),
+          ]),
+          content: Text(
+            '$targetLabel will become Dalipe Direct and $otherLabel will '
+            'be routed via Robinsons. All affected vehicle assignments will '
+            'update automatically.',
+            style: const TextStyle(fontSize: 13.5),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryNavy,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Yes, Switch',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+
+    // ── 3. Run the actual group switch ────────────────────────────────────
+    await _run(
+      () => RotationRepo.setDirectGroup(
+          widget.coopId, widget.routeId, widget.actorName, targetGroupKey),
+      '$targetLabel is now Dalipe Direct; $otherLabel goes via Robinsons.',
     );
   }
 
