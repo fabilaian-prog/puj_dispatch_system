@@ -4517,11 +4517,15 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                     final reason = (data['reason'] ?? 'No operational reason recorded.').toString();
                     final dispatcher = (data['dispatcher_name'] ?? 'Dispatcher').toString();
                     final route = _formatRouteName((data['route_id'] ?? '').toString());
-                    final prevOrder = (data['previous_order'] as List<dynamic>?)?.map((e) => e.toString()).join(' ➔ ') ?? 'None';
-                    final newOrder = (data['new_order'] as List<dynamic>?)?.map((e) => e.toString()).join(' ➔ ') ?? 'None';
                     final affectedCoops = (data['affected_cooperative_names'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
                     final Timestamp? ts = data['timestamp'] as Timestamp?;
                     final dateStr = ts != null ? ts.toDate().toLocal().toString().substring(0, 16) : 'Just now';
+                    final eventType = (data['event_type'] ?? '').toString();
+                    final isQueueOverride = eventType == 'UNCALLED_ROBINSONS_ENTRY_OVERRIDE';
+                    final affectedVehicle = (data['affected_vehicle'] ?? '').toString();
+                    final affectedDriver = (data['affected_driver'] ?? '').toString();
+                    final prevOrder = (data['previous_order'] as List<dynamic>?)?.map((e) => e.toString()).join(' ➔ ') ?? 'None';
+                    final newOrder = (data['new_order'] as List<dynamic>?)?.map((e) => e.toString()).join(' ➔ ') ?? 'None';
 
                     final isCrossCoop = affectedCoops.length > 1;
 
@@ -4547,15 +4551,27 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
                                   decoration: BoxDecoration(
-                                    color: isCrossCoop ? const Color(0xFFFEF3C7) : const Color(0xFFEFF6FF),
+                                    color: isQueueOverride
+                                        ? const Color(0xFFFFF7ED)
+                                        : isCrossCoop
+                                            ? const Color(0xFFFEF3C7)
+                                            : const Color(0xFFEFF6FF),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text(
-                                    isCrossCoop ? 'CROSS-COOPERATIVE OVERRIDE' : 'INTERNAL OVERRIDE',
+                                    isQueueOverride
+                                        ? 'QUEUE POSITION OVERRIDE'
+                                        : isCrossCoop
+                                            ? 'CROSS-COOPERATIVE OVERRIDE'
+                                            : 'INTERNAL OVERRIDE',
                                     style: TextStyle(
                                       fontSize: 10.5,
                                       fontWeight: FontWeight.w900,
-                                      color: isCrossCoop ? const Color(0xFF92400E) : const Color(0xFF1D4ED8),
+                                      color: isQueueOverride
+                                          ? const Color(0xFFC2410C)
+                                          : isCrossCoop
+                                              ? const Color(0xFF92400E)
+                                              : const Color(0xFF1D4ED8),
                                     ),
                                   ),
                                 ),
@@ -4582,7 +4598,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                             ),
                             const Divider(height: 16, color: AppColors.borderSubtle),
 
-                            if (isCrossCoop) ...[
+                            if (isCrossCoop && !isQueueOverride) ...[
                               Row(
                                 children: [
                                   const Icon(Icons.corporate_fare_rounded, size: 15, color: Color(0xFFD97706)),
@@ -4602,19 +4618,36 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                               const SizedBox(height: 6),
                             ],
 
-                            Text(
-                              'Previous Order: $prevOrder',
-                              style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              'New Order: $newOrder',
-                              style: const TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFF1D4ED8),
+                            if (isQueueOverride) ...[
+                              if (affectedVehicle.isNotEmpty)
+                                Text(
+                                  'Unit: $affectedVehicle${affectedDriver.isNotEmpty ? " • Driver: $affectedDriver" : ""}',
+                                  style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+                                ),
+                              if (affectedVehicle.isNotEmpty) const SizedBox(height: 3),
+                              Text(
+                                'Admitted to Robinsons terminal without prior call.',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFFC2410C),
+                                ),
                               ),
-                            ),
+                            ] else ...[
+                              Text(
+                                'Previous Order: $prevOrder',
+                                style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'New Order: $newOrder',
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF1D4ED8),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),

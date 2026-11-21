@@ -2752,6 +2752,8 @@ QueueSeeder.seedAll().then((created) async {
               'affected_driver': driverName,
               'cooperative_id': vData['cooperative_id'] ?? 'N/A',
               'cooperative_name': vData['cooperative_name'] ?? 'N/A',
+              'affected_cooperative_ids': [vData['cooperative_id'] ?? 'N/A'],
+              'affected_cooperative_names': [vData['cooperative_name'] ?? 'N/A'],
               'reason': overrideReason,
               'timestamp': FieldValue.serverTimestamp(),
             });
@@ -3033,6 +3035,8 @@ QueueSeeder.seedAll().then((created) async {
           'affected_driver': driverName,
           'cooperative_id': vData['cooperative_id'] ?? 'N/A',
           'cooperative_name': vData['cooperative_name'] ?? 'N/A',
+          'affected_cooperative_ids': [vData['cooperative_id'] ?? 'N/A'],
+          'affected_cooperative_names': [vData['cooperative_name'] ?? 'N/A'],
           'reason': overrideReason,
           'timestamp': FieldValue.serverTimestamp(),
         });
