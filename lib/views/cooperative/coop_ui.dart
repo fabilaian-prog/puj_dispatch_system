@@ -822,7 +822,7 @@ class CoopSideRail extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
-                    color: AppColors.commuterTeal,
+                    color: const Color(0xFFEF4444),
                     borderRadius: BorderRadius.circular(999)),
                 child: Text('${it.badge}',
                     style: const TextStyle(
