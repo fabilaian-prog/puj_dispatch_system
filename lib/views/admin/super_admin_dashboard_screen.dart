@@ -113,6 +113,8 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
   late Stream<QuerySnapshot> _queuesStream = _makeQueuesStream();
   late Stream<QuerySnapshot> _complaintsStream = _makeComplaintsStream();
   late Stream<QuerySnapshot> _auditsStream = _makeAuditsStream();
+  int _pendingReportCount = 0;
+  StreamSubscription<QuerySnapshot>? _pendingReportSub;
 
   // The Overview tab gets its OWN stream instances. A Firestore stream does
   // not replay its last value to a second listener, so sharing one stream
@@ -221,10 +223,21 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
     _tabController.addListener(() {
       if (mounted) setState(() {});
     });
+    _pendingReportSub = _ovComplaintsStream.listen((snap) {
+      if (!mounted) return;
+      final count = snap.docs.where((d) {
+        final status = ((d.data() as Map<String, dynamic>)['status'] ?? '')
+            .toString()
+            .toUpperCase();
+        return status.contains('PENDING');
+      }).length;
+      if (count != _pendingReportCount) setState(() => _pendingReportCount = count);
+    });
   }
 
   @override
   void dispose() {
+    _pendingReportSub?.cancel();
     _coopSearchCtrl.dispose();
     _reportSearchCtrl.dispose();
     _tabController.dispose();
@@ -2956,7 +2969,8 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                   _tabController.animateTo(i, duration: Duration.zero),
               items: [
                 for (final s in _sections)
-                  CoopNavItem(s.label, s.icon, s.selectedIcon),
+                  CoopNavItem(s.label, s.icon, s.selectedIcon,
+                      badge: s == _AdminSection.reports ? _pendingReportCount : 0),
               ],
               footer: InkWell(
                 borderRadius: BorderRadius.circular(12),
@@ -3035,8 +3049,18 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
         destinations: [
           for (final s in _sections)
             NavigationDestination(
-              icon: Icon(s.icon, color: AppColors.textMuted),
-              selectedIcon: Icon(s.selectedIcon, color: AppColors.primaryNavy),
+              icon: s == _AdminSection.reports && _pendingReportCount > 0
+                  ? Badge(
+                      backgroundColor: const Color(0xFFEF4444),
+                      child: Icon(s.icon, color: AppColors.textMuted),
+                    )
+                  : Icon(s.icon, color: AppColors.textMuted),
+              selectedIcon: s == _AdminSection.reports && _pendingReportCount > 0
+                  ? Badge(
+                      backgroundColor: const Color(0xFFEF4444),
+                      child: Icon(s.selectedIcon, color: AppColors.primaryNavy),
+                    )
+                  : Icon(s.selectedIcon, color: AppColors.primaryNavy),
               label: s.label,
             ),
         ],

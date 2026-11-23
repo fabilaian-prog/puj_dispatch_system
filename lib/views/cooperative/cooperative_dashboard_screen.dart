@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -129,6 +130,8 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
   // Overview tab: People / Reports sub-switches and the complaints stream.
   int _peopleSegment = 0;
   int _reportsSegment = 0;
+  int _pendingReportCount = 0;
+  StreamSubscription<QuerySnapshot>? _pendingReportSub;
   // The Overview tab gets its OWN streams. Firestore streams do not replay
   // their last value to a second listener, so sharing one stream between the
   // Overview and the Fleet / People / Reports tabs left whichever tab opened
@@ -245,7 +248,15 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
     _syncUserData();
     _tabController = TabController(length: _tabCount, vsync: this);
     _tabController.addListener(_onTabChanged);
-    
+    _pendingReportSub = _ovComplaintsStream.listen((snap) {
+      if (!mounted) return;
+      final count = snap.docs.where((d) {
+        final data = d.data() as Map<String, dynamic>;
+        final status = (data['status'] ?? '').toString().toUpperCase();
+        return _matchesCooperative(data) && status.contains('PENDING');
+      }).length;
+      if (count != _pendingReportCount) setState(() => _pendingReportCount = count);
+    });
   }
   
 
@@ -284,6 +295,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
 
   @override
   void dispose() {
+    _pendingReportSub?.cancel();
     _fleetSearchCtrl.dispose();
     _driverSearchCtrl.dispose();
     _dispatcherSearchCtrl.dispose();
@@ -6907,7 +6919,8 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                   _tabController.animateTo(i, duration: Duration.zero),
               items: [
                 for (final s in sections)
-                  CoopNavItem(s.label, s.icon, s.selectedIcon),
+                  CoopNavItem(s.label, s.icon, s.selectedIcon,
+                      badge: s == _Section.reports ? _pendingReportCount : 0),
               ],
               footer: _accountMenu(
                 offset: const Offset(0, -110),
@@ -6976,9 +6989,18 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
         destinations: [
           for (final s in sections)
             NavigationDestination(
-              icon: Icon(s.icon, color: AppColors.textMuted),
-              selectedIcon:
-                  Icon(s.selectedIcon, color: AppColors.primaryNavy),
+              icon: s == _Section.reports && _pendingReportCount > 0
+                  ? Badge(
+                      backgroundColor: const Color(0xFFEF4444),
+                      child: Icon(s.icon, color: AppColors.textMuted),
+                    )
+                  : Icon(s.icon, color: AppColors.textMuted),
+              selectedIcon: s == _Section.reports && _pendingReportCount > 0
+                  ? Badge(
+                      backgroundColor: const Color(0xFFEF4444),
+                      child: Icon(s.selectedIcon, color: AppColors.primaryNavy),
+                    )
+                  : Icon(s.selectedIcon, color: AppColors.primaryNavy),
               label: s.label,
             ),
         ],

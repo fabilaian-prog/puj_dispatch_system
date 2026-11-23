@@ -788,8 +788,26 @@ class CoopSideRail extends StatelessWidget {
         mainAxisAlignment:
             extended ? MainAxisAlignment.start : MainAxisAlignment.center,
         children: [
-          Icon(sel ? it.selectedIcon : it.icon,
-              size: 21, color: sel ? Colors.white : Colors.white70),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(sel ? it.selectedIcon : it.icon,
+                  size: 21, color: sel ? Colors.white : Colors.white70),
+              if (!extended && it.badge > 0)
+                Positioned(
+                  top: -3,
+                  right: -3,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFEF4444),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
+          ),
           if (extended) ...[
             const SizedBox(width: 12),
             Expanded(
