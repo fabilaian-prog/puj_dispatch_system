@@ -132,6 +132,9 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
   int _reportsSegment = 0;
   int _pendingReportCount = 0;
   StreamSubscription<QuerySnapshot>? _pendingReportSub;
+  StreamSubscription<QuerySnapshot>? _pendingVehiclesSub;
+  Set<String> _coopPlatesForBadge = {};
+  List<QueryDocumentSnapshot> _latestComplaintDocs = [];
   // The Overview tab gets its OWN streams. Firestore streams do not replay
   // their last value to a second listener, so sharing one stream between the
   // Overview and the Fleet / People / Reports tabs left whichever tab opened
@@ -248,17 +251,46 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
     _syncUserData();
     _tabController = TabController(length: _tabCount, vsync: this);
     _tabController.addListener(_onTabChanged);
+    // Badge count: listen to vehicles_live to build the coop's plate set,
+    // then listen to complaints and count pending ones whose plate is in that set
+    // (or whose cooperative_id/name matches directly).
+    _pendingVehiclesSub = FirebaseFirestore.instance
+        .collection('vehicles_live')
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      final plates = <String>{};
+      for (final d in snap.docs) {
+        final data = d.data() as Map<String, dynamic>;
+        if (_matchesCooperative(data)) {
+          plates.add(_normalizePlate(d.id));
+          final pn = data['plate_number']?.toString() ?? '';
+          if (pn.isNotEmpty) plates.add(_normalizePlate(pn));
+        }
+      }
+      _coopPlatesForBadge = plates;
+      _recomputePendingBadge();
+    });
     _pendingReportSub = _ovComplaintsStream.listen((snap) {
       if (!mounted) return;
-      final count = snap.docs.where((d) {
-        final data = d.data() as Map<String, dynamic>;
-        final status = (data['status'] ?? '').toString().toUpperCase();
-        return _matchesCooperative(data) && status.contains('PENDING');
-      }).length;
-      if (count != _pendingReportCount) setState(() => _pendingReportCount = count);
+      _latestComplaintDocs = snap.docs;
+      _recomputePendingBadge();
     });
   }
   
+
+  void _recomputePendingBadge() {
+    if (!mounted) return;
+    final count = _latestComplaintDocs.where((d) {
+      final data = d.data() as Map<String, dynamic>;
+      final status = (data['status'] ?? '').toString().toUpperCase();
+      if (!status.contains('PENDING')) return false;
+      if (_matchesCooperative(data)) return true;
+      final plate = _normalizePlate(data['plate_number']?.toString() ?? '');
+      return plate.isNotEmpty && _coopPlatesForBadge.contains(plate);
+    }).length;
+    if (count != _pendingReportCount) setState(() => _pendingReportCount = count);
+  }
 
   void _onTabChanged() {
     if (mounted) setState(() {});
@@ -295,6 +327,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
 
   @override
   void dispose() {
+    _pendingVehiclesSub?.cancel();
     _pendingReportSub?.cancel();
     _fleetSearchCtrl.dispose();
     _driverSearchCtrl.dispose();
