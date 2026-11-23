@@ -103,9 +103,12 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
 
   int _reportsSegment = 0; // 0 = Complaints, 1 = Queue Audits
   String _complaintStatusFilter = 'ALL';
+  String _complaintCoopFilter = 'ALL';
+  String _complaintRouteFilter = 'ALL';
   String _reportSearchQuery = '';
   DateTime? _auditDateFrom;
   DateTime? _auditDateTo;
+  String _auditRouteFilter = 'ALL';
 
   // Streams are plain `late` fields (not final) so "Retry" can recreate them.
   late Stream<QuerySnapshot> _coopsStream = _makeCoopsStream();
@@ -1281,6 +1284,56 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
     );
   }
 
+  Widget _filterDropdown({
+    required IconData icon,
+    required String hint,
+    required String? value,
+    required List<DropdownMenuItem<String?>> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Container(
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: value != null ? AppColors.primaryNavy : AppColors.borderSubtle,
+          width: value != null ? 1.5 : 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon,
+              size: 15,
+              color: value != null
+                  ? AppColors.primaryNavy
+                  : AppColors.textMuted),
+          const SizedBox(width: 6),
+          DropdownButton<String?>(
+            value: value,
+            hint: Text(hint,
+                style: const TextStyle(
+                    fontSize: 13, color: AppColors.textMuted)),
+            underline: const SizedBox.shrink(),
+            isDense: true,
+            style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.darkSlate,
+                fontWeight: FontWeight.w600),
+            icon: const Icon(Icons.keyboard_arrow_down_rounded,
+                size: 18, color: AppColors.textMuted),
+            items: items,
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+
+
+
   // ===========================================================================
   // TAB 2: COOPERATIVES MANAGEMENT
   // ===========================================================================
@@ -2065,6 +2118,29 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
               return db.compareTo(da);
             });
 
+            // ── derive cooperative & route choice lists from live data ──
+            final Set<String> coopIds = {};
+            final Map<String, String> coopIdToName = {};
+            final Set<String> routeIds = {};
+            for (final d in allDocs) {
+              final m = d.data() as Map<String, dynamic>;
+              final cid = (m['cooperative_id'] ?? '').toString().trim();
+              final cname = (m['cooperative_name'] ?? '').toString().trim();
+              if (cid.isNotEmpty) {
+                coopIds.add(cid);
+                if (cname.isNotEmpty) coopIdToName[cid] = cname;
+              } else if (cname.isNotEmpty) {
+                coopIds.add(cname);
+                coopIdToName[cname] = cname;
+              }
+              final rid = (m['route_id'] ?? '').toString().trim();
+              if (rid.isNotEmpty) routeIds.add(rid);
+            }
+            final sortedCoopIds = coopIds.toList()
+              ..sort((a, b) => (coopIdToName[a] ?? a)
+                  .compareTo(coopIdToName[b] ?? b));
+            final sortedRouteIds = routeIds.toList()..sort();
+
             int pendingCount = 0;
             int reviewCount = 0;
             int resolvedCount = 0;
@@ -2097,6 +2173,22 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
               if (_complaintStatusFilter == 'RESOLVED' &&
                   !s.contains('RESOLVED')) {
                 return false;
+              }
+
+              // ── cooperative filter ──
+              if (_complaintCoopFilter != 'ALL') {
+                final cid = (m['cooperative_id'] ?? '').toString().trim();
+                final cname = (m['cooperative_name'] ?? '').toString().trim();
+                if (cid != _complaintCoopFilter &&
+                    cname != _complaintCoopFilter) {
+                  return false;
+                }
+              }
+
+              // ── route filter ──
+              if (_complaintRouteFilter != 'ALL') {
+                final rid = (m['route_id'] ?? '').toString().trim();
+                if (rid != _complaintRouteFilter) return false;
               }
 
               if (q.isNotEmpty) {
@@ -2199,7 +2291,55 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                   hint: 'Search plate number, category, or description',
                   onChanged: (v) => setState(() => _reportSearchQuery = v),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
+                // ── cooperative + route dropdowns ──
+                if (sortedCoopIds.isNotEmpty || sortedRouteIds.isNotEmpty)
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (sortedCoopIds.isNotEmpty)
+                        _filterDropdown(
+                          icon: Icons.groups_rounded,
+                          hint: 'All cooperatives',
+                          value: _complaintCoopFilter == 'ALL'
+                              ? null
+                              : _complaintCoopFilter,
+                          items: [
+                            const DropdownMenuItem(
+                                value: null, child: Text('All cooperatives')),
+                            for (final id in sortedCoopIds)
+                              DropdownMenuItem(
+                                  value: id,
+                                  child: Text(coopIdToName[id] ?? id,
+                                      overflow: TextOverflow.ellipsis)),
+                          ],
+                          onChanged: (v) => setState(() =>
+                              _complaintCoopFilter = v ?? 'ALL'),
+                        ),
+                      if (sortedRouteIds.isNotEmpty)
+                        _filterDropdown(
+                          icon: Icons.route_rounded,
+                          hint: 'All routes',
+                          value: _complaintRouteFilter == 'ALL'
+                              ? null
+                              : _complaintRouteFilter,
+                          items: [
+                            const DropdownMenuItem(
+                                value: null, child: Text('All routes')),
+                            for (final rid in sortedRouteIds)
+                              DropdownMenuItem(
+                                  value: rid,
+                                  child: Text(
+                                      _formatRouteDisplayName(rid),
+                                      overflow: TextOverflow.ellipsis)),
+                          ],
+                          onChanged: (v) => setState(() =>
+                              _complaintRouteFilter = v ?? 'ALL'),
+                        ),
+                    ],
+                  ),
+                const SizedBox(height: 10),
                 CoopChoiceChips(
                   value: _complaintStatusFilter,
                   onChanged: (v) =>
@@ -2305,12 +2445,13 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
-                if (hasFilter) ...[
+                if (hasFilter || _auditRouteFilter != 'ALL') ...[
                   const SizedBox(width: 8),
                   TextButton.icon(
                     onPressed: () => setState(() {
                       _auditDateFrom = null;
                       _auditDateTo = null;
+                      _auditRouteFilter = 'ALL';
                     }),
                     icon: const Icon(Icons.close_rounded, size: 15),
                     label: const Text('Clear', style: TextStyle(fontSize: 13)),
@@ -2342,21 +2483,28 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                 return db.compareTo(da);
               });
 
+              // ── derive route list from live data ──
+              final Set<String> auditRouteIds = {};
+              for (final d in allDocs) {
+                final rid = ((d.data() as Map<String, dynamic>)['route_id'] ?? '')
+                    .toString()
+                    .trim();
+                if (rid.isNotEmpty) auditRouteIds.add(rid);
+              }
+              final sortedAuditRoutes = auditRouteIds.toList()..sort();
+
               final docs = allDocs.where((d) {
-                final ts = ((d.data() as Map<String, dynamic>)['timestamp'] as Timestamp?)?.toDate();
+                final data = d.data() as Map<String, dynamic>;
+                final ts = (data['timestamp'] as Timestamp?)?.toDate();
                 if (ts == null) return true;
                 if (_auditDateFrom != null && ts.isBefore(_auditDateFrom!)) return false;
                 if (_auditDateTo != null && ts.isAfter(_auditDateTo!.add(const Duration(days: 1)))) return false;
+                if (_auditRouteFilter != 'ALL') {
+                  final rid = (data['route_id'] ?? '').toString().trim();
+                  if (rid != _auditRouteFilter) return false;
+                }
                 return true;
               }).toList();
-
-              if (docs.isEmpty) {
-                return const CoopEmptyState(
-                  icon: Icons.verified_user_outlined,
-                  title: 'No queue overrides recorded',
-                  message: 'Terminal dispatcher queue reorderings across all routes will appear here.',
-                );
-              }
 
               Widget auditCard(QueryDocumentSnapshot doc) {
                 final data = doc.data() as Map<String, dynamic>;
@@ -2414,24 +2562,86 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                 );
               }
 
-              if (isWide) {
-                return GridView.builder(
-                  padding: EdgeInsets.fromLTRB(pad, 16, pad, 40),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisExtent: 130,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 10,
-                  ),
-                  itemCount: docs.length,
-                  itemBuilder: (_, i) => auditCard(docs[i]),
+              // ── route filter dropdown ──
+              final routeDropdown = sortedAuditRoutes.isNotEmpty
+                  ? Padding(
+                      padding: EdgeInsets.fromLTRB(pad, 8, pad, 0),
+                      child: Row(children: [
+                        _filterDropdown(
+                          icon: Icons.route_rounded,
+                          hint: 'All routes',
+                          value: _auditRouteFilter == 'ALL'
+                              ? null
+                              : _auditRouteFilter,
+                          items: [
+                            const DropdownMenuItem(
+                                value: null, child: Text('All routes')),
+                            for (final rid in sortedAuditRoutes)
+                              DropdownMenuItem(
+                                  value: rid,
+                                  child: Text(
+                                      _formatRouteDisplayName(rid),
+                                      overflow: TextOverflow.ellipsis)),
+                          ],
+                          onChanged: (v) =>
+                              setState(() => _auditRouteFilter = v ?? 'ALL'),
+                        ),
+                      ]),
+                    )
+                  : const SizedBox.shrink();
+
+              if (docs.isEmpty) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    routeDropdown,
+                    const Expanded(
+                      child: CoopEmptyState(
+                        icon: Icons.verified_user_outlined,
+                        title: 'No queue overrides recorded',
+                        message:
+                            'Terminal dispatcher queue reorderings across all routes will appear here.',
+                      ),
+                    ),
+                  ],
                 );
               }
 
-              return ListView.builder(
-                padding: EdgeInsets.fromLTRB(pad, 16, pad, 40),
-                itemCount: docs.length,
-                itemBuilder: (_, i) => auditCard(docs[i]),
+              if (isWide) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    routeDropdown,
+                    Expanded(
+                      child: GridView.builder(
+                        padding: EdgeInsets.fromLTRB(pad, 16, pad, 40),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          mainAxisExtent: 130,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 10,
+                        ),
+                        itemCount: docs.length,
+                        itemBuilder: (_, i) => auditCard(docs[i]),
+                      ),
+                    ),
+                  ],
+                );
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  routeDropdown,
+                  Expanded(
+                    child: ListView.builder(
+                      padding: EdgeInsets.fromLTRB(pad, 16, pad, 40),
+                      itemCount: docs.length,
+                      itemBuilder: (_, i) => auditCard(docs[i]),
+                    ),
+                  ),
+                ],
               );
             },
           ),
