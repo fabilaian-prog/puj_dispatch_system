@@ -2097,7 +2097,44 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
         final bool isWide = constraints.maxWidth >= 1100;
         final double pad = isDesktop ? 28 : 16;
 
+        // Outer 1: coops — for the cooperative dropdown list
         return StreamBuilder<QuerySnapshot>(
+          stream: _coopsStream,
+          builder: (context, coopSnap) {
+            final Map<String, String> coopIdToName = {};
+            for (final c in coopSnap.data?.docs ?? <QueryDocumentSnapshot>[]) {
+              final cd = c.data() as Map<String, dynamic>;
+              final cid = (cd['cooperative_id'] ?? c.id).toString().trim();
+              final cname = (cd['cooperative_name'] ?? cd['coop_name'] ?? '')
+                  .toString().trim();
+              if (cid.isNotEmpty && cname.isNotEmpty) coopIdToName[cid] = cname;
+            }
+            final sortedCoopIds = coopIdToName.keys.toList()
+              ..sort((a, b) => coopIdToName[a]!.compareTo(coopIdToName[b]!));
+
+            // Outer 2: vehicles — for plate→coopId filter lookup
+            return StreamBuilder<QuerySnapshot>(
+              stream: _vehiclesStream,
+              builder: (context, vSnap) {
+                final Map<String, String> plateToCoopId = {};
+                final Map<String, String> plateToCoopName = {};
+                for (final v in vSnap.data?.docs ?? <QueryDocumentSnapshot>[]) {
+                  final vd = v.data() as Map<String, dynamic>;
+                  final cid = (vd['cooperative_id'] ?? '').toString().trim();
+                  final cname = (vd['cooperative_name'] ?? '').toString().trim();
+                  // doc ID is the plate; also check the plate_number field
+                  for (final raw in [v.id, vd['plate_number']?.toString() ?? '']) {
+                    final plate = raw
+                        .replaceAll(RegExp(r'[^A-Za-z0-9]'), '')
+                        .toUpperCase();
+                    if (plate.isNotEmpty && cid.isNotEmpty) {
+                      plateToCoopId[plate] = cid;
+                      plateToCoopName[plate] = cname;
+                    }
+                  }
+                }
+
+            return StreamBuilder<QuerySnapshot>(
           stream: _complaintsStream,
           builder: (context, snapshot) {
             if (snapshot.hasError) {
@@ -2118,74 +2155,36 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
               return db.compareTo(da);
             });
 
-            // ── derive cooperative & route choice lists from live data ──
-            final Set<String> coopIds = {};
-            final Map<String, String> coopIdToName = {};
+            // ── route list from complaint docs (they always carry route_id) ──
             final Set<String> routeIds = {};
             for (final d in allDocs) {
-              final m = d.data() as Map<String, dynamic>;
-              final cid = (m['cooperative_id'] ?? '').toString().trim();
-              final cname = (m['cooperative_name'] ?? '').toString().trim();
-              if (cid.isNotEmpty) {
-                coopIds.add(cid);
-                if (cname.isNotEmpty) coopIdToName[cid] = cname;
-              } else if (cname.isNotEmpty) {
-                coopIds.add(cname);
-                coopIdToName[cname] = cname;
-              }
-              final rid = (m['route_id'] ?? '').toString().trim();
+              final rid = ((d.data() as Map<String, dynamic>)['route_id'] ?? '')
+                  .toString().trim();
               if (rid.isNotEmpty) routeIds.add(rid);
             }
-            final sortedCoopIds = coopIds.toList()
-              ..sort((a, b) => (coopIdToName[a] ?? a)
-                  .compareTo(coopIdToName[b] ?? b));
             final sortedRouteIds = routeIds.toList()..sort();
 
-            int pendingCount = 0;
-            int reviewCount = 0;
-            int resolvedCount = 0;
-            for (final d in allDocs) {
-              final s = (d.data() as Map<String, dynamic>)['status']
-                      ?.toString()
-                      .toUpperCase() ??
-                  '';
-              if (s.contains('RESOLVED')) {
-                resolvedCount++;
-              } else if (s.contains('REVIEW') || s.contains('INVESTIGAT')) {
-                reviewCount++;
-              } else {
-                pendingCount++;
-              }
-            }
-
             final q = _reportSearchQuery.trim().toLowerCase();
-            final List<QueryDocumentSnapshot> filtered = allDocs.where((d) {
-              final m = d.data() as Map<String, dynamic>;
-              final s = (m['status'] ?? '').toString().toUpperCase();
-              if (_complaintStatusFilter == 'PENDING' &&
-                  !s.contains('PENDING')) {
-                return false;
-              }
-              if (_complaintStatusFilter == 'UNDER_REVIEW' &&
-                  !(s.contains('REVIEW') || s.contains('INVESTIGAT'))) {
-                return false;
-              }
-              if (_complaintStatusFilter == 'RESOLVED' &&
-                  !s.contains('RESOLVED')) {
-                return false;
-              }
 
-              // ── cooperative filter ──
+            // ── pre-filter by coop, route & search (but NOT status) for chip counts ──
+            final List<QueryDocumentSnapshot> preFiltered = allDocs.where((d) {
+              final m = d.data() as Map<String, dynamic>;
+
               if (_complaintCoopFilter != 'ALL') {
                 final cid = (m['cooperative_id'] ?? '').toString().trim();
                 final cname = (m['cooperative_name'] ?? '').toString().trim();
-                if (cid != _complaintCoopFilter &&
-                    cname != _complaintCoopFilter) {
-                  return false;
-                }
+                // Fall back to plate→coop lookup for complaints filed by commuters
+                // that don't yet have cooperative_id written on them.
+                final plate = (m['plate_number'] ?? '')
+                    .toString()
+                    .replaceAll(RegExp(r'[^A-Za-z0-9]'), '')
+                    .toUpperCase();
+                final resolvedCid = cid.isNotEmpty ? cid : (plateToCoopId[plate] ?? '');
+                final resolvedCname = cname.isNotEmpty ? cname : (plateToCoopName[plate] ?? '');
+                if (resolvedCid != _complaintCoopFilter &&
+                    resolvedCname != _complaintCoopFilter) return false;
               }
 
-              // ── route filter ──
               if (_complaintRouteFilter != 'ALL') {
                 final rid = (m['route_id'] ?? '').toString().trim();
                 if (rid != _complaintRouteFilter) return false;
@@ -2196,12 +2195,45 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                     (m['plate_number'] ?? '').toString().toLowerCase();
                 final cat = (m['category'] ?? '').toString().toLowerCase();
                 final desc = (m['description'] ?? '').toString().toLowerCase();
-                if (!plate.contains(q) &&
-                    !cat.contains(q) &&
-                    !desc.contains(q)) {
+                if (!plate.contains(q) && !cat.contains(q) && !desc.contains(q)) {
                   return false;
                 }
               }
+              return true;
+            }).toList();
+
+            int pendingCount = 0;
+            int reviewCount = 0;
+            int resolvedCount = 0;
+            int escalatedCount = 0;
+            for (final d in preFiltered) {
+              final s = (d.data() as Map<String, dynamic>)['status']
+                      ?.toString()
+                      .toUpperCase() ??
+                  '';
+              if (s == 'ESCALATED') {
+                escalatedCount++;
+              } else if (s.contains('RESOLVED')) {
+                resolvedCount++;
+              } else if (s.contains('REVIEW') || s.contains('INVESTIGAT')) {
+                reviewCount++;
+              } else {
+                pendingCount++;
+              }
+            }
+
+            // ── apply status filter on top to get the visible list ──
+            final List<QueryDocumentSnapshot> filtered = preFiltered.where((d) {
+              final s = ((d.data() as Map<String, dynamic>)['status'] ?? '')
+                  .toString()
+                  .toUpperCase();
+              if (_complaintStatusFilter == 'PENDING' &&
+                  (s.contains('PENDING') == false || s == 'ESCALATED')) return false;
+              if (_complaintStatusFilter == 'UNDER_REVIEW' &&
+                  !(s.contains('REVIEW') || s.contains('INVESTIGAT'))) return false;
+              if (_complaintStatusFilter == 'RESOLVED' &&
+                  !s.contains('RESOLVED')) return false;
+              if (_complaintStatusFilter == 'ESCALATED' && s != 'ESCALATED') return false;
               return true;
             }).toList();
 
@@ -2214,26 +2246,42 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                   .toString()
                   .toUpperCase();
               final latestNote = (m['latest_coop_comment'] ?? '').toString();
+              final adminRuling = (m['admin_ruling'] ?? '').toString();
               final ts = (m['created_at'] as Timestamp?)?.toDate();
+              final bool isEscalated = status == 'ESCALATED';
               final CoopTone tone = status.contains('RESOLVED')
                   ? CoopTone.success
-                  : (status.contains('REVIEW') ? CoopTone.info : CoopTone.warning);
+                  : isEscalated
+                      ? CoopTone.warning
+                      : (status.contains('REVIEW') ? CoopTone.info : CoopTone.warning);
               final String statusLabel = status.contains('RESOLVED')
                   ? 'Resolved'
-                  : (status.contains('REVIEW') ? 'Under review' : 'Pending');
-              return Container(
+                  : isEscalated
+                      ? 'Escalated'
+                      : (status.contains('REVIEW') ? 'Under review' : 'Pending');
+              return InkWell(
+                onTap: () => _showAdminComplaintDetailModal(doc),
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
                 margin: const EdgeInsets.only(bottom: 10),
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.borderSubtle),
+                  border: Border.all(
+                    color: isEscalated ? const Color(0xFFDDD6FE) : AppColors.borderSubtle,
+                    width: isEscalated ? 1.5 : 1,
+                  ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
+                        if (isEscalated) ...[
+                          const Icon(Icons.escalator_warning_rounded, size: 16, color: Color(0xFF7C3AED)),
+                          const SizedBox(width: 4),
+                        ],
                         CoopPlate(plate),
                         const SizedBox(width: 8),
                         Expanded(
@@ -2272,14 +2320,49 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                                 color: CoopTone.info.fg)),
                       ),
                     ],
+                    if (adminRuling.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F3FF),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFDDD6FE)),
+                        ),
+                        child: Text('LTFRB: $adminRuling',
+                            style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF6D28D9))),
+                      ),
+                    ],
                     if (ts != null) ...[
                       const SizedBox(height: 6),
-                      Text('Filed ${_ago(ts)}',
-                          style: const TextStyle(
-                              fontSize: 11.5, color: AppColors.textMuted)),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Filed ${_ago(ts)}',
+                              style: const TextStyle(
+                                  fontSize: 11.5, color: AppColors.textMuted)),
+                          const Text('Tap to review',
+                              style: TextStyle(
+                                  fontSize: 11, color: Color(0xFF7C3AED), fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 4),
+                      const Align(
+                        alignment: Alignment.centerRight,
+                        child: Text('Tap to review',
+                            style: TextStyle(
+                                fontSize: 11, color: Color(0xFF7C3AED), fontWeight: FontWeight.w600)),
+                      ),
                     ],
                   ],
                 ),
+              ),
               );
             }
 
@@ -2345,11 +2428,13 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                   onChanged: (v) =>
                       setState(() => _complaintStatusFilter = v),
                   choices: [
-                    CoopChoice('ALL', 'All reports', count: allDocs.length),
+                    CoopChoice('ALL', 'All reports', count: preFiltered.length),
                     CoopChoice('PENDING', 'Pending', count: pendingCount),
                     CoopChoice('UNDER_REVIEW', 'Under review',
                         count: reviewCount),
                     CoopChoice('RESOLVED', 'Resolved', count: resolvedCount),
+                    CoopChoice('ESCALATED', 'Escalated',
+                        count: escalatedCount),
                   ],
                 ),
                 const SizedBox(height: 14),
@@ -2376,6 +2461,10 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                 else
                   ...filtered.map(complaintCard),
               ],
+            );
+          },
+        );
+              },
             );
           },
         );
@@ -2649,6 +2738,570 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
       ],
     );
   });
+  }
+
+  // ===========================================================================
+  // ADMIN COMPLAINT DETAIL MODAL & WRITE HELPERS
+  // ===========================================================================
+
+  Future<void> _saveAdminRulingStatus(String docId, String newLtfrbStatus) async {
+    try {
+      await FirebaseFirestore.instance.collection('complaints').doc(docId).update({
+        'ltfrb_status': newLtfrbStatus,
+        'ltfrb_updated_at': FieldValue.serverTimestamp(),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('LTFRB status set to ${newLtfrbStatus.replaceAll('_', ' ')}.'),
+          backgroundColor: const Color(0xFF6D28D9),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed: $e'), backgroundColor: AppColors.errorCrimson),
+      );
+    }
+  }
+
+  Future<void> _saveAdminRuling(String docId, String ruling, String ruledBy) async {
+    if (ruling.trim().isEmpty) return;
+    try {
+      await FirebaseFirestore.instance.collection('complaints').doc(docId).update({
+        'admin_ruling': ruling.trim(),
+        'admin_ruled_by': ruledBy,
+        'admin_ruled_at': FieldValue.serverTimestamp(),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('LTFRB ruling recorded.'),
+          backgroundColor: Color(0xFF6D28D9),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save ruling: $e'), backgroundColor: AppColors.errorCrimson),
+      );
+    }
+  }
+
+  Future<void> _adminForceResolve(String docId, String ruledBy) async {
+    try {
+      await FirebaseFirestore.instance.collection('complaints').doc(docId).update({
+        'status': 'RESOLVED',
+        'ltfrb_status': 'CLEARED',
+        'admin_ruled_by': ruledBy,
+        'admin_ruled_at': FieldValue.serverTimestamp(),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Complaint resolved by LTFRB.'),
+          backgroundColor: Color(0xFF059669),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed: $e'), backgroundColor: AppColors.errorCrimson),
+      );
+    }
+  }
+
+  void _showAdminComplaintDetailModal(QueryDocumentSnapshot doc) {
+    final cData = doc.data() as Map<String, dynamic>;
+    final category = (cData['category'] ?? 'General Infraction').toString();
+    final plate = (cData['plate_number'] ?? 'N/A').toString();
+    final desc = (cData['description'] ?? 'No description provided.').toString();
+    final complainant = (cData['complainant_name'] ?? 'Passenger').toString();
+    final contact = (cData['complainant_contact'] ?? 'N/A').toString();
+    final coopName = (cData['cooperative_name'] ?? cData['coop_name'] ?? 'Unknown Cooperative').toString();
+    final Timestamp? ts = cData['created_at'] as Timestamp?;
+    final dateStr = ts != null ? ts.toDate().toLocal().toString().substring(0, 16) : 'Recent';
+
+    // LTFRB-side state inside the modal
+    String selectedLtfrbStatus = (cData['ltfrb_status'] ?? 'UNDER_LTFRB_REVIEW').toString();
+    final rulingController = TextEditingController(text: (cData['admin_ruling'] ?? '').toString());
+    final formKey = GlobalKey<FormState>();
+    bool isSaving = false;
+    // We use a fixed admin identity label; in a real deploy this would come
+    // from the authenticated admin user record.
+    const String adminLabel = 'LTFRB Admin';
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setModalState) {
+          Widget ltfrbStatusChip(String val, String label, IconData icon, Color fg, Color bg, Color border) {
+            final bool selected = selectedLtfrbStatus == val;
+            return GestureDetector(
+              onTap: () {
+                setModalState(() => selectedLtfrbStatus = val);
+                _saveAdminRulingStatus(doc.id, val);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+                decoration: BoxDecoration(
+                  color: selected ? bg : Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: selected ? border : AppColors.borderSubtle,
+                    width: selected ? 1.5 : 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, size: 13, color: selected ? fg : AppColors.textMuted),
+                    const SizedBox(width: 5),
+                    Text(label,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+                          color: selected ? fg : AppColors.textMuted,
+                        )),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          return SafeArea(
+            child: Dialog(
+              backgroundColor: Colors.white,
+              elevation: 6,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: const BorderSide(color: Color(0xFFDDD6FE), width: 1.5),
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520, maxHeight: 700),
+                child: StreamBuilder<DocumentSnapshot>(
+                  stream: FirebaseFirestore.instance.collection('complaints').doc(doc.id).snapshots(),
+                  builder: (context, snapshot) {
+                    final live = snapshot.data?.data() as Map<String, dynamic>? ?? cData;
+                    final currentCoopStatus = (live['status'] ?? 'PENDING_VERIFICATION').toString().toUpperCase();
+                    final coopComments = (live['cooperative_comments'] as List<dynamic>? ?? []).reversed.toList();
+
+                    return SingleChildScrollView(
+                      padding: const EdgeInsets.all(22),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // ── Header ──
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF5F3FF),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(Icons.admin_panel_settings_rounded,
+                                    color: Color(0xFF7C3AED), size: 22),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(category,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w800,
+                                            color: AppColors.darkSlate)),
+                                    Text('Filed $dateStr  •  $coopName',
+                                        style: const TextStyle(
+                                            fontSize: 11.5, color: AppColors.textMuted)),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              CoopPlate(plate),
+                              const SizedBox(width: 4),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                icon: const Icon(Icons.close_rounded, size: 22, color: AppColors.textMuted),
+                                onPressed: () => Navigator.pop(dialogContext),
+                              ),
+                            ],
+                          ),
+                          const Divider(height: 20, color: AppColors.borderSubtle),
+
+                          // ── Incident description ──
+                          const Text('Incident Description',
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.darkSlate)),
+                          const SizedBox(height: 6),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(11),
+                            decoration: BoxDecoration(
+                              color: AppColors.backgroundSlate,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppColors.borderSubtle),
+                            ),
+                            child: Text(desc,
+                                style: const TextStyle(fontSize: 13, height: 1.35, color: AppColors.darkSlate)),
+                          ),
+                          const SizedBox(height: 8),
+
+                          // ── Complainant + coop status row ──
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.backgroundSlate,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.person_outline_rounded,
+                                          size: 16, color: AppColors.primaryNavy),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text('$complainant ($contact)',
+                                            style: const TextStyle(
+                                                fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.darkSlate)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: currentCoopStatus == 'ESCALATED'
+                                      ? const Color(0xFFF5F3FF)
+                                      : AppColors.backgroundSlate,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: currentCoopStatus == 'ESCALATED'
+                                      ? Border.all(color: const Color(0xFFDDD6FE))
+                                      : null,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      currentCoopStatus == 'ESCALATED'
+                                          ? Icons.escalator_warning_rounded
+                                          : Icons.groups_2_rounded,
+                                      size: 15,
+                                      color: currentCoopStatus == 'ESCALATED'
+                                          ? const Color(0xFF7C3AED)
+                                          : AppColors.textMuted,
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      currentCoopStatus == 'ESCALATED' ? 'Escalated by Coop' : 'Coop: ${currentCoopStatus.replaceAll('_', ' ').toLowerCase()}',
+                                      style: TextStyle(
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: currentCoopStatus == 'ESCALATED'
+                                              ? const Color(0xFF6D28D9)
+                                              : AppColors.textMuted),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          // ── LTFRB Ruling Status ──
+                          Row(
+                            children: [
+                              const Icon(Icons.gavel_rounded, size: 16, color: Color(0xFF7C3AED)),
+                              const SizedBox(width: 6),
+                              const Text('LTFRB Ruling Status',
+                                  style: TextStyle(
+                                      fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.darkSlate)),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              ltfrbStatusChip(
+                                'UNDER_LTFRB_REVIEW', 'Under Review',
+                                Icons.hourglass_top_rounded,
+                                const Color(0xFF1D4ED8), const Color(0xFFEFF6FF), const Color(0xFFBFDBFE),
+                              ),
+                              ltfrbStatusChip(
+                                'CLEARED', 'Cleared',
+                                Icons.verified_rounded,
+                                const Color(0xFF059669), const Color(0xFFECFDF5), const Color(0xFFA7F3D0),
+                              ),
+                              ltfrbStatusChip(
+                                'SANCTIONED', 'Sanctioned',
+                                Icons.report_rounded,
+                                const Color(0xFFB91C1C), const Color(0xFFFEF2F2), const Color(0xFFFECACA),
+                              ),
+                              ltfrbStatusChip(
+                                'DISMISSED', 'Dismissed',
+                                Icons.cancel_outlined,
+                                AppColors.textMuted, AppColors.backgroundSlate, AppColors.borderSubtle,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          // ── Admin ruling / remarks ──
+                          Row(
+                            children: [
+                              const Icon(Icons.edit_note_rounded, size: 16, color: Color(0xFF7C3AED)),
+                              const SizedBox(width: 6),
+                              const Text('LTFRB Remarks',
+                                  style: TextStyle(
+                                      fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.darkSlate)),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Form(
+                            key: formKey,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: rulingController,
+                                    maxLines: 2,
+                                    style: const TextStyle(fontSize: 13),
+                                    decoration: InputDecoration(
+                                      hintText: 'e.g. Driver issued formal sanction; case forwarded to FR unit...',
+                                      hintStyle: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+                                      filled: true,
+                                      fillColor: const Color(0xFFF5F3FF),
+                                      isDense: true,
+                                      contentPadding: const EdgeInsets.all(10),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: const BorderSide(color: Color(0xFFDDD6FE)),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: const BorderSide(color: Color(0xFF7C3AED), width: 1.3),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: const BorderSide(color: Color(0xFFDDD6FE)),
+                                      ),
+                                    ),
+                                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter a remark' : null,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF7C3AED),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    elevation: 0,
+                                  ),
+                                  onPressed: isSaving
+                                      ? null
+                                      : () async {
+                                          if (!formKey.currentState!.validate()) return;
+                                          setModalState(() => isSaving = true);
+                                          await _saveAdminRuling(doc.id, rulingController.text, adminLabel);
+                                          setModalState(() => isSaving = false);
+                                        },
+                                  child: isSaving
+                                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                      : const Text('Save', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Divider(height: 24, color: AppColors.borderSubtle),
+
+                          // ── Cooperative action notes (read-only) ──
+                          Row(
+                            children: [
+                              const Icon(Icons.forum_outlined, size: 15, color: AppColors.primaryNavy),
+                              const SizedBox(width: 6),
+                              const Text('Cooperative Action Notes',
+                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.darkSlate)),
+                              const Spacer(),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEFF6FF),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text('${coopComments.length}',
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8))),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          if (coopComments.isEmpty)
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: AppColors.backgroundSlate,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppColors.borderSubtle),
+                              ),
+                              child: const Center(
+                                child: Text('No cooperative notes yet.',
+                                    style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                              ),
+                            )
+                          else
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxHeight: 140),
+                              child: ListView.builder(
+                                shrinkWrap: true,
+                                itemCount: coopComments.length,
+                                itemBuilder: (ctx, i) {
+                                  final item = coopComments[i] as Map<String, dynamic>;
+                                  final author = item['author_name'] ?? 'Officer';
+                                  final coop = item['coop_name'] ?? '';
+                                  final msg = item['message'] ?? '';
+                                  final cTs = item['created_at'] as Timestamp?;
+                                  final time = cTs != null
+                                      ? cTs.toDate().toLocal().toString().substring(5, 16)
+                                      : '';
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 6),
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF8FAFC),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text('$author ($coop)',
+                                                style: const TextStyle(
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: AppColors.primaryNavy)),
+                                            Text(time,
+                                                style: const TextStyle(
+                                                    fontSize: 10.5, color: AppColors.textMuted)),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(msg,
+                                            style: const TextStyle(
+                                                fontSize: 12.5,
+                                                color: AppColors.darkSlate,
+                                                height: 1.25)),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          const SizedBox(height: 14),
+
+                          // ── Force Resolve button ──
+                          if (currentCoopStatus != 'RESOLVED') ...[
+                            SizedBox(
+                              height: 40,
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF059669),
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  elevation: 0,
+                                ),
+                                icon: const Icon(Icons.gavel_rounded, size: 16),
+                                label: const Text('Force Resolve (LTFRB Override)',
+                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                onPressed: isSaving
+                                    ? null
+                                    : () async {
+                                        final confirm = await showDialog<bool>(
+                                          context: context,
+                                          builder: (ctx) => AlertDialog(
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                            title: const Text('Force Resolve?',
+                                                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                                            content: const Text(
+                                              'This will mark the complaint as Resolved and set LTFRB status to Cleared. This overrides the cooperative\'s current status.',
+                                              style: TextStyle(fontSize: 13, height: 1.4),
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                  onPressed: () => Navigator.pop(ctx, false),
+                                                  child: const Text('Cancel')),
+                                              ElevatedButton(
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: const Color(0xFF059669),
+                                                  foregroundColor: Colors.white,
+                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                                ),
+                                                onPressed: () => Navigator.pop(ctx, true),
+                                                child: const Text('Force Resolve'),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                        if (confirm == true) {
+                                          setModalState(() => isSaving = true);
+                                          await _adminForceResolve(doc.id, adminLabel);
+                                          setModalState(() => isSaving = false);
+                                          if (context.mounted) Navigator.pop(dialogContext);
+                                        }
+                                      },
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+
+                          SizedBox(
+                            height: 40,
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: AppColors.borderSubtle),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                              onPressed: () => Navigator.pop(dialogContext),
+                              child: const Text('Close',
+                                  style: TextStyle(
+                                      color: AppColors.darkSlate,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   // ===========================================================================

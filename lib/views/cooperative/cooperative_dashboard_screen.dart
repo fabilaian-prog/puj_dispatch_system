@@ -4717,9 +4717,10 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
   bool _matchesComplaintStatus(String rawStatus) {
     final s = rawStatus.trim().toUpperCase();
     if (_selectedStatusFilter == 'ALL') return true;
-    if (_selectedStatusFilter == 'PENDING') return s.contains('PENDING');
+    if (_selectedStatusFilter == 'PENDING') return s.contains('PENDING') && s != 'ESCALATED';
     if (_selectedStatusFilter == 'UNDER_REVIEW') return s.contains('REVIEW') || s.contains('INVESTIGAT');
     if (_selectedStatusFilter == 'RESOLVED') return s.contains('RESOLVED');
+    if (_selectedStatusFilter == 'ESCALATED') return s == 'ESCALATED';
     return false;
   }
 
@@ -4748,8 +4749,33 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
   String _normalizeStatusKey(String raw) {
     final s = raw.toUpperCase();
     if (s.contains('RESOLVED')) return 'RESOLVED';
+    if (s == 'ESCALATED') return 'ESCALATED';
     if (s.contains('REVIEW') || s.contains('INVESTIGAT')) return 'UNDER_REVIEW';
     return 'PENDING_VERIFICATION';
+  }
+
+  Future<void> _escalateComplaint(String docId) async {
+    try {
+      await FirebaseFirestore.instance.collection('complaints').doc(docId).update({
+        'status': 'ESCALATED',
+        'escalated_to_admin': true,
+        'escalated_at': FieldValue.serverTimestamp(),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Complaint escalated to LTFRB for review.'),
+          backgroundColor: Color(0xFF7C3AED),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to escalate: $e'), backgroundColor: AppColors.errorCrimson),
+      );
+    }
   }
 
   Future<void> _updateComplaintStatus(String docId, String newStatus) async {
@@ -4810,6 +4836,61 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
     }
   }
 
+  /// A row of three tappable status chips used *inside* the complaint detail
+  /// modal. Selecting a chip only stages the value locally — it does not write
+  /// to Firestore. The caller is responsible for showing a Save button when
+  /// [staged] differs from the persisted status.
+  Widget _statusSelectorRow({
+    required String staged,
+    required ValueChanged<String> onChanged,
+  }) {
+    const options = [
+      ('PENDING_VERIFICATION', 'Pending',    Icons.pending_actions_rounded,  Color(0xFFD97706), Color(0xFFFEF3C7), Color(0xFFFCD34D)),
+      ('UNDER_REVIEW',         'Under Review', Icons.hourglass_top_rounded,  Color(0xFF1D4ED8), Color(0xFFEFF6FF), Color(0xFFBFDBFE)),
+      ('RESOLVED',             'Resolved',   Icons.check_circle_rounded,     Color(0xFF059669), Color(0xFFECFDF5), Color(0xFFA7F3D0)),
+    ];
+    return Row(
+      children: [
+        for (final (val, label, icon, fg, bg, border) in options) ...[
+          Expanded(
+            child: GestureDetector(
+              onTap: () => onChanged(val),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 130),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: staged == val ? bg : Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: staged == val ? border : AppColors.borderSubtle,
+                    width: staged == val ? 1.5 : 1,
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, size: 16, color: staged == val ? fg : AppColors.textMuted),
+                    const SizedBox(height: 3),
+                    Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: staged == val ? FontWeight.w800 : FontWeight.w500,
+                        color: staged == val ? fg : AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (val != 'RESOLVED') const SizedBox(width: 6),
+        ],
+      ],
+    );
+  }
+
   Widget _buildStatusDropdownPill({
     required String docId,
     required String currentStatus,
@@ -4833,6 +4914,12 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
         text = const Color(0xFF1D4ED8);
         icon = Icons.hourglass_top_rounded;
         break;
+      case 'ESCALATED':
+        bg = const Color(0xFFF5F3FF);
+        border = const Color(0xFFDDD6FE);
+        text = const Color(0xFF6D28D9);
+        icon = Icons.escalator_warning_rounded;
+        break;
       case 'PENDING_VERIFICATION':
       default:
         bg = const Color(0xFFFEF3C7);
@@ -4840,6 +4927,30 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
         text = const Color(0xFFB45309);
         icon = Icons.pending_actions_rounded;
         break;
+    }
+
+    // When escalated, the coop can no longer change the status — show a read-only badge.
+    if (currentStatus == 'ESCALATED') {
+      return Container(
+        width: isFullWidth ? double.infinity : null,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: border, width: 1.1),
+        ),
+        child: Row(
+          mainAxisSize: isFullWidth ? MainAxisSize.max : MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: text),
+            const SizedBox(width: 6),
+            Text(
+              _getStatusLabel(currentStatus),
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: text),
+            ),
+          ],
+        ),
+      );
     }
 
     return PopupMenuButton<String>(
@@ -4905,6 +5016,9 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
     final commentController = TextEditingController();
     final formKey = GlobalKey<FormState>();
     bool isPosting = false;
+    // Local staged status — only written to Firestore when the user taps "Save Status"
+    String stagedStatus = statusKey;
+    bool isSavingStatus = false;
 
     showDialog(
       context: context,
@@ -5030,11 +5144,48 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                             style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.darkSlate),
                           ),
                           const SizedBox(height: 6),
-                          _buildStatusDropdownPill(
-                            docId: doc.id,
-                            currentStatus: currentStatus,
-                            isFullWidth: true,
-                          ),
+                          // ── Staged status selector — only saved on explicit tap ──
+                          if (currentStatus == 'ESCALATED')
+                            _buildStatusDropdownPill(
+                              docId: doc.id,
+                              currentStatus: currentStatus,
+                              isFullWidth: true,
+                            )
+                          else ...[
+                            _statusSelectorRow(
+                              staged: stagedStatus,
+                              onChanged: (val) => setModalState(() => stagedStatus = val),
+                            ),
+                            if (stagedStatus != currentStatus) ...[
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                height: 38,
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primaryNavy,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    elevation: 0,
+                                  ),
+                                  icon: isSavingStatus
+                                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                      : const Icon(Icons.save_rounded, size: 16),
+                                  label: Text(
+                                    isSavingStatus ? 'Saving…' : 'Save Status',
+                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                                  ),
+                                  onPressed: isSavingStatus
+                                      ? null
+                                      : () async {
+                                          setModalState(() => isSavingStatus = true);
+                                          await _updateComplaintStatus(doc.id, stagedStatus);
+                                          setModalState(() => isSavingStatus = false);
+                                        },
+                                ),
+                              ),
+                            ],
+                          ],
                           ComplaintSuspensionPanel(
                             plate: plate,
                             complaintId: doc.id,
@@ -5186,6 +5337,53 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                           ),
                           const SizedBox(height: 14),
 
+                          // ── Escalate to LTFRB button (only when not already escalated/resolved) ──
+                          if (currentStatus != 'ESCALATED' && currentStatus != 'RESOLVED') ...[
+                            SizedBox(
+                              height: 40,
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF7C3AED),
+                                  side: const BorderSide(color: Color(0xFFDDD6FE), width: 1.2),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                icon: const Icon(Icons.escalator_warning_rounded, size: 16),
+                                label: const Text('Escalate to LTFRB', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                onPressed: () async {
+                                  final confirm = await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                      title: const Text('Escalate to LTFRB?', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                                      content: const Text(
+                                        'This will flag the complaint for LTFRB review. The cooperative will no longer be able to change the status once escalated.',
+                                        style: TextStyle(fontSize: 13, height: 1.4),
+                                      ),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                                        ElevatedButton(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: const Color(0xFF7C3AED),
+                                            foregroundColor: Colors.white,
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                          ),
+                                          onPressed: () => Navigator.pop(ctx, true),
+                                          child: const Text('Escalate'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirm == true) {
+                                    await _escalateComplaint(doc.id);
+                                    if (context.mounted) Navigator.pop(dialogContext);
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+
                           SizedBox(
                             height: 40,
                             child: OutlinedButton(
@@ -5311,6 +5509,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                                     _buildPopupMenuItem('PENDING', 'Pending', Icons.pending_actions_rounded, const Color(0xFFD97706)),
                                     _buildPopupMenuItem('UNDER_REVIEW', 'Under Review', Icons.hourglass_top_rounded, const Color(0xFF2563EB)),
                                     _buildPopupMenuItem('RESOLVED', 'Resolved', Icons.check_circle_rounded, const Color(0xFF059669)),
+                                    _buildPopupMenuItem('ESCALATED', 'Escalated to LTFRB', Icons.escalator_warning_rounded, const Color(0xFF7C3AED)),
                                   ],
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -5554,6 +5753,8 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
         return 'Under Review';
       case 'RESOLVED':
         return 'Resolved';
+      case 'ESCALATED':
+        return 'Escalated to LTFRB';
       default:
         return 'All Statuses';
     }
