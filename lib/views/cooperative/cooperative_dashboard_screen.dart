@@ -14,6 +14,7 @@ import 'package:http/http.dart' as http;
 import '../auth/login_screen.dart';
 import '../../utils/staff_auth.dart';
 import '../../utils/app_colors.dart';
+import '../../utils/fare_config.dart';
 import 'rotation_master_list.dart';
 import 'route_process_config.dart';
 import 'coop_ui.dart';
@@ -5024,7 +5025,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
       context: context,
       barrierDismissible: true,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setModalState) {
+        builder: (modalCtx, setModalState) {
           return SafeArea(
             child: Dialog(
               backgroundColor: Colors.white,
@@ -5038,11 +5039,14 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                 constraints: const BoxConstraints(maxWidth: 500, maxHeight: 680),
                 child: StreamBuilder<DocumentSnapshot>(
                   stream: FirebaseFirestore.instance.collection('complaints').doc(doc.id).snapshots(),
-                  builder: (context, snapshot) {
+                  builder: (streamCtx, snapshot) {
                     final currentData = snapshot.data?.data() as Map<String, dynamic>? ?? cData;
                     final rawList = currentData['cooperative_comments'] as List<dynamic>? ?? [];
                     final comments = rawList.reversed.toList();
                     final currentStatus = _normalizeStatusKey((currentData['status'] ?? statusKey).toString());
+                    final ltfrbStatus = (currentData['ltfrb_status'] ?? '').toString();
+                    final ltfrbLocked = currentData['ltfrb_locked'] == true;
+                    final ltfrbRuling = (currentData['admin_ruling'] ?? '').toString();
 
                     return SingleChildScrollView(
                       padding: const EdgeInsets.all(22),
@@ -5139,62 +5143,173 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                           ),
                           const SizedBox(height: 16),
 
-                          const Text(
-                            'Update Investigation Status',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.darkSlate),
-                          ),
-                          const SizedBox(height: 6),
-                          // ── Staged status selector — only saved on explicit tap ──
-                          if (currentStatus == 'ESCALATED')
-                            _buildStatusDropdownPill(
-                              docId: doc.id,
-                              currentStatus: currentStatus,
-                              isFullWidth: true,
-                            )
-                          else ...[
-                            _statusSelectorRow(
-                              staged: stagedStatus,
-                              onChanged: (val) => setModalState(() => stagedStatus = val),
-                            ),
-                            if (stagedStatus != currentStatus) ...[
-                              const SizedBox(height: 8),
-                              SizedBox(
-                                height: 38,
+                          // ── LTFRB status badge (shown when admin has acted) ──────
+                          if (ltfrbStatus.isNotEmpty) ...[
+                            Builder(builder: (_) {
+                              final Map<String, (String, IconData, Color, Color, Color)> ltfrbMeta = {
+                                'PENDING':            ('Returned to Pending by LTFRB', Icons.pending_actions_rounded, const Color(0xFF7C3AED), const Color(0xFFF5F3FF), const Color(0xFFDDD6FE)),
+                                'UNDER_LTFRB_REVIEW': ('Under LTFRB Review',  Icons.hourglass_top_rounded,   const Color(0xFF1D4ED8), const Color(0xFFEFF6FF), const Color(0xFFBFDBFE)),
+                                'CLEARED':            ('Cleared by LTFRB',    Icons.verified_rounded,         const Color(0xFF059669), const Color(0xFFECFDF5), const Color(0xFFA7F3D0)),
+                                'SANCTIONED':         ('Sanctioned by LTFRB', Icons.report_rounded,           const Color(0xFFB91C1C), const Color(0xFFFEF2F2), const Color(0xFFFECACA)),
+                                'DISMISSED':          ('Dismissed by LTFRB',  Icons.cancel_outlined,          const Color(0xFF64748B), const Color(0xFFF1F5F9), const Color(0xFFCBD5E1)),
+                              };
+                              final meta = ltfrbMeta[ltfrbStatus];
+                              if (meta == null) return const SizedBox.shrink();
+                              final (label, icon, fg, bg, border) = meta;
+                              return Container(
                                 width: double.infinity,
-                                child: ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.primaryNavy,
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    elevation: 0,
-                                  ),
-                                  icon: isSavingStatus
-                                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                                      : const Icon(Icons.save_rounded, size: 16),
-                                  label: Text(
-                                    isSavingStatus ? 'Saving…' : 'Save Status',
-                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                                  ),
-                                  onPressed: isSavingStatus
-                                      ? null
-                                      : () async {
-                                          setModalState(() => isSavingStatus = true);
-                                          await _updateComplaintStatus(doc.id, stagedStatus);
-                                          setModalState(() => isSavingStatus = false);
-                                        },
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: bg,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: border, width: 1.2),
                                 ),
-                              ),
-                            ],
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(Icons.admin_panel_settings_rounded, size: 15, color: fg),
+                                        const SizedBox(width: 6),
+                                        Text(label,
+                                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: fg)),
+                                        if (ltfrbLocked) ...[
+                                          const SizedBox(width: 6),
+                                          Icon(Icons.lock_rounded, size: 12, color: fg),
+                                          const SizedBox(width: 3),
+                                          Text('Editing locked', style: TextStyle(fontSize: 11, color: fg)),
+                                        ],
+                                      ],
+                                    ),
+                                    if (ltfrbRuling.isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text('LTFRB note: $ltfrbRuling',
+                                          style: TextStyle(fontSize: 12, color: fg, height: 1.3)),
+                                    ],
+                                  ],
+                                ),
+                              );
+                            }),
+                            const SizedBox(height: 10),
                           ],
-                          ComplaintSuspensionPanel(
-                            plate: plate,
-                            complaintId: doc.id,
-                            complaintCategory: category,
-                            officerName: _fullName,
-                            coopId: _coopId,
-                            coopName: _coopName,
-                            belongsToCoop: _matchesCooperative,
-                          ),
+
+                          if (!ltfrbLocked) ...[
+                            const Text(
+                              'Update Investigation Status',
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.darkSlate),
+                            ),
+                            const SizedBox(height: 6),
+                            // ── Staged status selector ──────────────────────
+                            if (currentStatus == 'ESCALATED')
+                              _buildStatusDropdownPill(
+                                docId: doc.id,
+                                currentStatus: currentStatus,
+                                isFullWidth: true,
+                              )
+                            else ...[
+                              _statusSelectorRow(
+                                staged: stagedStatus,
+                                onChanged: (val) => setModalState(() => stagedStatus = val),
+                              ),
+                              if (stagedStatus != currentStatus) ...[
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  height: 38,
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.primaryNavy,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      elevation: 0,
+                                    ),
+                                    icon: isSavingStatus
+                                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                        : const Icon(Icons.save_rounded, size: 16),
+                                    label: Text(
+                                      isSavingStatus ? 'Saving…' : 'Save Status',
+                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                                    ),
+                                    onPressed: isSavingStatus
+                                        ? null
+                                        : () async {
+                                            // ── Confirm before writing ──────────────────
+                                            final Map<String, (String, String, Color)> confirmMeta = {
+                                              'PENDING_VERIFICATION': (
+                                                'Set to Pending?',
+                                                'The complaint will be moved back to Pending Verification. The case will be open again for initial review.',
+                                                const Color(0xFFD97706),
+                                              ),
+                                              'UNDER_REVIEW': (
+                                                'Mark as Under Review?',
+                                                'This indicates your cooperative is actively investigating this complaint.',
+                                                const Color(0xFF1D4ED8),
+                                              ),
+                                              'RESOLVED': (
+                                                'Mark as Resolved?',
+                                                'This closes the complaint and marks it as resolved by your cooperative. This action is recorded.',
+                                                const Color(0xFF059669),
+                                              ),
+                                            };
+                                            final meta = confirmMeta[stagedStatus];
+                                            if (meta != null) {
+                                              final (title, body, accentColor) = meta;
+                                              final confirmed = await showDialog<bool>(
+                                                context: dialogContext,
+                                                builder: (ctx) => AlertDialog(
+                                                  backgroundColor: Colors.white,
+                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                                  title: Row(
+                                                    children: [
+                                                      Icon(Icons.check_circle_outline_rounded, size: 18, color: accentColor),
+                                                      const SizedBox(width: 8),
+                                                      Expanded(
+                                                        child: Text(title,
+                                                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  content: Text(body,
+                                                      style: const TextStyle(fontSize: 13, height: 1.4, color: AppColors.darkSlate)),
+                                                  actions: [
+                                                    TextButton(
+                                                      onPressed: () => Navigator.pop(ctx, false),
+                                                      child: const Text('Cancel',
+                                                          style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textMuted)),
+                                                    ),
+                                                    ElevatedButton(
+                                                      style: ElevatedButton.styleFrom(
+                                                        backgroundColor: accentColor,
+                                                        foregroundColor: Colors.white,
+                                                        elevation: 0,
+                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                                      ),
+                                                      onPressed: () => Navigator.pop(ctx, true),
+                                                      child: const Text('Confirm', style: TextStyle(fontWeight: FontWeight.bold)),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                              if (confirmed != true) return;
+                                            }
+                                            setModalState(() => isSavingStatus = true);
+                                            await _updateComplaintStatus(doc.id, stagedStatus);
+                                            setModalState(() => isSavingStatus = false);
+                                          },
+                                  ),
+                                ),
+                              ],
+                            ],
+                            ComplaintSuspensionPanel(
+                              plate: plate,
+                              complaintId: doc.id,
+                              complaintCategory: category,
+                              officerName: _fullName,
+                              coopId: _coopId,
+                              coopName: _coopName,
+                              belongsToCoop: _matchesCooperative,
+                            ),
+                          ],
                           const Divider(height: 24, color: AppColors.borderSubtle),
 
                           Row(
@@ -5352,7 +5467,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                                 label: const Text('Escalate to LTFRB', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                                 onPressed: () async {
                                   final confirm = await showDialog<bool>(
-                                    context: context,
+                                    context: dialogContext,
                                     builder: (ctx) => AlertDialog(
                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                                       title: const Text('Escalate to LTFRB?', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
@@ -5376,7 +5491,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                                   );
                                   if (confirm == true) {
                                     await _escalateComplaint(doc.id);
-                                    if (context.mounted) Navigator.pop(dialogContext);
+                                    if (dialogContext.mounted) Navigator.pop(dialogContext);
                                   }
                                 },
                               ),
@@ -6734,25 +6849,6 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
             ),
     );
 
-    // Quick actions
-    final quick = CoopPanel(
-      title: 'Quick actions',
-      child: Wrap(
-        spacing: 10,
-        runSpacing: 10,
-        children: [
-          _quickAction(Icons.directions_bus_rounded, 'Add jeepney',
-              _showAddJeepneyModal),
-          _quickAction(
-              Icons.person_add_rounded, 'Add driver', _showAddDriverModal),
-          _quickAction(Icons.person_pin_circle_rounded, 'Add dispatcher',
-              _showAddDispatcherModal),
-          _quickAction(
-              Icons.campaign_rounded, 'Send a notice', () => _showCreateNoticeModal()),
-        ],
-      ),
-    );
-
     final activity = _recentActivityPanel();
 
     return LayoutBuilder(
@@ -6843,7 +6939,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                         const SizedBox(height: 16),
                         activity,
                         const SizedBox(height: 16),
-                        quick,
+                        _buildFarePanel(),
                       ],
                     ),
                   ),
@@ -6863,9 +6959,9 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
               const SizedBox(height: 14),
               board,
               const SizedBox(height: 14),
-              quick,
-              const SizedBox(height: 14),
               routesPanel,
+              const SizedBox(height: 14),
+              _buildFarePanel(),
               const SizedBox(height: 14),
               activity,
             ],
@@ -6987,35 +7083,51 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
     );
   }
 
-  Widget _quickAction(IconData icon, String label, VoidCallback onTap) {
-    return Material(
-      color: AppColors.backgroundSlate,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppColors.borderSubtle),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
+  Widget _buildFarePanel() {
+    return StreamBuilder<FareConfig>(
+      stream: FareConfig.stream(),
+      builder: (context, snap) {
+        final fare = snap.data ?? FareConfig.defaults;
+        final rows = [
+          ('Base fare (regular)', '₱${fare.baseFare.toStringAsFixed(2)}'),
+          ('Base fare (discounted)', '₱${fare.baseFareDiscounted.toStringAsFixed(2)}'),
+          ('Base distance', '${fare.baseKm} km'),
+          ('Per-km (regular)', '₱${fare.perKmFare.toStringAsFixed(2)}'),
+          ('Per-km (discounted)', '₱${fare.perKmFareDiscounted.toStringAsFixed(2)}'),
+        ];
+        return CoopPanel(
+          title: 'Current fare rates',
+          subtitle: 'Set by the provincial admin · read-only',
+          child: Column(
             children: [
-              Icon(icon, size: 18, color: AppColors.primaryNavy),
-              const SizedBox(width: 8),
-              Text(label,
-                  style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.darkSlate)),
+              for (int i = 0; i < rows.length; i++) ...[
+                if (i > 0)
+                  const Divider(height: 20, color: AppColors.borderSubtle),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(rows[i].$1,
+                          style: const TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textMuted,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                    Text(rows[i].$2,
+                        style: const TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.darkSlate)),
+                  ],
+                ),
+              ],
             ],
           ),
-        ),
-      ),
+        );
+      },
     );
   }
+
+
 
   Widget _recentActivityPanel() {
     return CoopPanel(

@@ -9,6 +9,7 @@ import '../auth/login_screen.dart';
 import '../../utils/app_colors.dart';
 import '../../utils/staff_auth.dart';
 import '../cooperative/coop_ui.dart';
+import '../cooperative/driver_suspension.dart';
 import '../cooperative/route_process_config.dart';
 import 'fare_settings_tab.dart';
 
@@ -2744,26 +2745,253 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
   // ADMIN COMPLAINT DETAIL MODAL & WRITE HELPERS
   // ===========================================================================
 
-  Future<void> _saveAdminRulingStatus(String docId, String newLtfrbStatus) async {
-    try {
-      await FirebaseFirestore.instance.collection('complaints').doc(docId).update({
-        'ltfrb_status': newLtfrbStatus,
-        'ltfrb_updated_at': FieldValue.serverTimestamp(),
-        'updated_at': FieldValue.serverTimestamp(),
-      });
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('LTFRB status set to ${newLtfrbStatus.replaceAll('_', ' ')}.'),
-          backgroundColor: const Color(0xFF6D28D9),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed: $e'), backgroundColor: AppColors.errorCrimson),
-      );
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  /// Looks up the driverId + driverName from a plate number via vehicles_live.
+  Future<({String id, String name})?> _resolveDriverFromPlate(String plate) async {
+    if (plate.isEmpty || plate == 'N/A') return null;
+    final db = FirebaseFirestore.instance;
+    String normPlate(String s) => s.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();
+    Map<String, dynamic>? v;
+    final direct = await db.collection('vehicles_live').doc(plate).get();
+    if (direct.exists) {
+      v = direct.data();
+    } else {
+      final all = await db.collection('vehicles_live').get();
+      for (final d in all.docs) {
+        final p = (d.data()['plate_number'] ?? d.id).toString();
+        if (normPlate(p) == normPlate(plate)) { v = d.data(); break; }
+      }
+    }
+    if (v == null) return null;
+    final id = (v['driver_id'] ?? '').toString().trim();
+    if (id.isEmpty || id == 'UNASSIGNED' || id == 'None') return null;
+    final u = await db.collection('users').doc(id).get();
+    final name = (u.data()?['full_name'] ?? v['driver_name'] ?? id).toString();
+    return (id: id, name: name);
+  }
+
+  /// Posts a system-generated notice to the `notices` collection targeting
+  /// the cooperative that owns the complaint.
+  Future<void> _postCoopNotice({
+    required String coopId,
+    required String coopName,
+    required String title,
+    required String message,
+    String priority = 'URGENT',
+  }) async {
+    await FirebaseFirestore.instance.collection('notices').add({
+      'cooperative_id': coopId,
+      'cooperative_name': coopName,
+      'author_name': 'LTFRB Admin',
+      'title': title,
+      'message': message,
+      'priority': priority,
+      'target_mode': 'BROADCAST_ALL',
+      'target_audience': 'ALL',
+      'target_user_id': null,
+      'target_user_name': null,
+      'target_role': null,
+      'created_at': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Called when the admin taps a ruling chip. Performs the appropriate
+  /// system action for each status beyond just writing the field.
+  Future<void> _applyLtfrbRuling(
+    BuildContext dialogContext,
+    String docId,
+    String newLtfrbStatus, {
+    required String plate,
+    required String coopId,
+    required String coopName,
+    required String category,
+    required String adminLabel,
+  }) async {
+    final db = FirebaseFirestore.instance;
+    final docRef = db.collection('complaints').doc(docId);
+
+    switch (newLtfrbStatus) {
+      // ── SANCTIONED: suspend the driver ──────────────────────────────────────
+      case 'SANCTIONED':
+        final drv = await _resolveDriverFromPlate(plate);
+        if (!mounted) return;
+        if (drv == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No driver found for this plate. Mark as sanctioned and handle manually.'),
+              backgroundColor: AppColors.errorCrimson,
+              duration: Duration(seconds: 4),
+            ),
+          );
+          // Still write the ltfrb_status even if no driver found
+          await docRef.update({
+            'ltfrb_status': 'SANCTIONED',
+            'ltfrb_locked': true,
+            'ltfrb_updated_at': FieldValue.serverTimestamp(),
+            'updated_at': FieldValue.serverTimestamp(),
+          });
+          return;
+        }
+        // Show the suspend dialog — this writes the suspension to Firestore itself
+        final suspended = await showSuspendDriverDialog(
+          context,
+          driverId: drv.id,
+          driverName: drv.name,
+          officerName: adminLabel,
+          coopId: coopId,
+          coopName: coopName,
+          plate: plate,
+          complaintId: docId,
+          initialReason: 'LTFRB sanction — $category',
+        );
+        if (!mounted) return;
+        if (!suspended) return; // Admin cancelled the dialog — don't change status
+        await docRef.update({
+          'ltfrb_status': 'SANCTIONED',
+          'ltfrb_locked': true,
+          'ltfrb_sanctioned_driver_id': drv.id,
+          'ltfrb_sanctioned_driver_name': drv.name,
+          'ltfrb_updated_at': FieldValue.serverTimestamp(),
+          'updated_at': FieldValue.serverTimestamp(),
+        });
+        // Notify the cooperative
+        try {
+          await _postCoopNotice(
+            coopId: coopId,
+            coopName: coopName,
+            title: 'LTFRB Sanction Issued — $plate',
+            message:
+                'LTFRB has formally sanctioned driver ${drv.name} following a complaint regarding "$category". '
+                'A suspension has been applied. Please ensure compliance with LTFRB directives.',
+          );
+        } catch (_) {}
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${drv.name} sanctioned and suspended. Cooperative notified.'),
+            backgroundColor: const Color(0xFFB91C1C),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        break;
+
+      // ── CLEARED: complaint reviewed, no wrongdoing ───────────────────────────
+      case 'CLEARED':
+        await docRef.update({
+          'ltfrb_status': 'CLEARED',
+          'ltfrb_locked': false,
+          'ltfrb_updated_at': FieldValue.serverTimestamp(),
+          'updated_at': FieldValue.serverTimestamp(),
+        });
+        try {
+          await _postCoopNotice(
+            coopId: coopId,
+            coopName: coopName,
+            title: 'LTFRB Review Complete — Complaint Cleared',
+            message:
+                'LTFRB has completed its review of the complaint regarding "$category" (plate: $plate). '
+                'No violation was found. No further action is required from the cooperative.',
+            priority: 'NORMAL',
+          );
+        } catch (_) {}
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Complaint cleared. Cooperative notified.'),
+            backgroundColor: Color(0xFF059669),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        break;
+
+      // ── DISMISSED: case closed without action ────────────────────────────────
+      case 'DISMISSED':
+        await docRef.update({
+          'status': 'RESOLVED',
+          'ltfrb_status': 'DISMISSED',
+          'ltfrb_locked': false,
+          'ltfrb_updated_at': FieldValue.serverTimestamp(),
+          'updated_at': FieldValue.serverTimestamp(),
+        });
+        try {
+          await _postCoopNotice(
+            coopId: coopId,
+            coopName: coopName,
+            title: 'LTFRB Case Dismissed — $category',
+            message:
+                'LTFRB has dismissed the complaint regarding "$category" (plate: $plate) and closed the case. '
+                'The complaint has been marked as Resolved. No action is required.',
+            priority: 'NORMAL',
+          );
+        } catch (_) {}
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Case dismissed and complaint closed. Cooperative notified.'),
+            backgroundColor: Color(0xFF64748B),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        break;
+
+      // ── PENDING: reset, remove any LTFRB ruling, unlock coop ────────────────
+      case 'PENDING':
+        await docRef.update({
+          'ltfrb_status': 'PENDING',
+          'ltfrb_locked': false,
+          'ltfrb_updated_at': FieldValue.serverTimestamp(),
+          'updated_at': FieldValue.serverTimestamp(),
+        });
+        try {
+          await _postCoopNotice(
+            coopId: coopId,
+            coopName: coopName,
+            title: 'LTFRB Ruling Reset — Complaint Returned',
+            message:
+                'LTFRB has reset the ruling on the complaint regarding "$category" (plate: $plate). '
+                'Your cooperative may resume editing and updating the complaint status.',
+            priority: 'NORMAL',
+          );
+        } catch (_) {}
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Complaint returned to pending. Cooperative notified.'),
+            backgroundColor: Color(0xFF7C3AED),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        break;
+
+      // ── UNDER_LTFRB_REVIEW: lock the coop out of editing ────────────────────
+      case 'UNDER_LTFRB_REVIEW':
+      default:
+        await docRef.update({
+          'ltfrb_status': 'UNDER_LTFRB_REVIEW',
+          'ltfrb_locked': true,
+          'ltfrb_updated_at': FieldValue.serverTimestamp(),
+          'updated_at': FieldValue.serverTimestamp(),
+        });
+        try {
+          await _postCoopNotice(
+            coopId: coopId,
+            coopName: coopName,
+            title: 'LTFRB is Reviewing Your Complaint Report',
+            message:
+                'LTFRB has taken over the review of the complaint regarding "$category" (plate: $plate). '
+                'The complaint is now locked for editing until LTFRB issues a ruling.',
+          );
+        } catch (_) {}
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Complaint locked for LTFRB review. Cooperative notified.'),
+            backgroundColor: Color(0xFF1D4ED8),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        break;
     }
   }
 
@@ -2824,12 +3052,13 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
     final desc = (cData['description'] ?? 'No description provided.').toString();
     final complainant = (cData['complainant_name'] ?? 'Passenger').toString();
     final contact = (cData['complainant_contact'] ?? 'N/A').toString();
+    final coopId = (cData['cooperative_id'] ?? cData['coop_id'] ?? '').toString();
     final coopName = (cData['cooperative_name'] ?? cData['coop_name'] ?? 'Unknown Cooperative').toString();
     final Timestamp? ts = cData['created_at'] as Timestamp?;
     final dateStr = ts != null ? ts.toDate().toLocal().toString().substring(0, 16) : 'Recent';
 
     // LTFRB-side state inside the modal
-    String selectedLtfrbStatus = (cData['ltfrb_status'] ?? 'UNDER_LTFRB_REVIEW').toString();
+    String selectedLtfrbStatus = (cData['ltfrb_status'] ?? 'PENDING').toString();
     final rulingController = TextEditingController(text: (cData['admin_ruling'] ?? '').toString());
     final formKey = GlobalKey<FormState>();
     bool isSaving = false;
@@ -2845,9 +3074,91 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
           Widget ltfrbStatusChip(String val, String label, IconData icon, Color fg, Color bg, Color border) {
             final bool selected = selectedLtfrbStatus == val;
             return GestureDetector(
-              onTap: () {
+              onTap: () async {
+                // ── Confirmation descriptions per ruling ──────────────────
+                final Map<String, (String, String, Color)> confirmMeta = {
+                  'PENDING': (
+                    'Reset to Pending?',
+                    'This removes any active LTFRB ruling and returns the complaint to a no-action state. The cooperative will regain editing rights.',
+                    const Color(0xFF7C3AED),
+                  ),
+                  'UNDER_LTFRB_REVIEW': (
+                    'Take Over for Review?',
+                    'This will lock the complaint from cooperative editing and notify the cooperative that LTFRB is now reviewing it.',
+                    const Color(0xFF1D4ED8),
+                  ),
+                  'CLEARED': (
+                    'Clear This Complaint?',
+                    'This marks the complaint as cleared — no violation found. The cooperative will be notified and editing will be unlocked.',
+                    const Color(0xFF059669),
+                  ),
+                  'SANCTIONED': (
+                    'Issue LTFRB Sanction?',
+                    'You will be asked to set a suspension duration. The driver will be suspended system-wide and the cooperative will be notified.',
+                    const Color(0xFFB91C1C),
+                  ),
+                  'DISMISSED': (
+                    'Dismiss This Case?',
+                    'The complaint will be closed and marked as Resolved with no action taken. The cooperative will be notified.',
+                    const Color(0xFF64748B),
+                  ),
+                };
+                final meta = confirmMeta[val];
+                if (meta != null) {
+                  final (title, body, accentColor) = meta;
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      backgroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      title: Row(
+                        children: [
+                          Icon(Icons.gavel_rounded, size: 18, color: accentColor),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(title,
+                                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                          ),
+                        ],
+                      ),
+                      content: Text(body,
+                          style: const TextStyle(fontSize: 13, height: 1.4, color: AppColors.darkSlate)),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Cancel',
+                              style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textMuted)),
+                        ),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: accentColor,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Confirm', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed != true) return;
+                }
                 setModalState(() => selectedLtfrbStatus = val);
-                _saveAdminRulingStatus(doc.id, val);
+                await _applyLtfrbRuling(
+                  dialogContext,
+                  doc.id,
+                  val,
+                  plate: plate,
+                  coopId: coopId,
+                  coopName: coopName,
+                  category: category,
+                  adminLabel: adminLabel,
+                );
+                // If the ruling was DISMISSED, it also closes the complaint — pop the modal
+                if (val == 'DISMISSED' && dialogContext.mounted) {
+                  Navigator.pop(dialogContext);
+                }
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
@@ -3040,6 +3351,11 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                             spacing: 8,
                             runSpacing: 8,
                             children: [
+                              ltfrbStatusChip(
+                                'PENDING', 'Pending',
+                                Icons.pending_actions_rounded,
+                                const Color(0xFF7C3AED), const Color(0xFFF5F3FF), const Color(0xFFDDD6FE),
+                              ),
                               ltfrbStatusChip(
                                 'UNDER_LTFRB_REVIEW', 'Under Review',
                                 Icons.hourglass_top_rounded,
