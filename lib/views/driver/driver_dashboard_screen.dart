@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../utils/app_colors.dart';
 import '../../utils/app_typography.dart';
+import '../../utils/offline_banner_mixin.dart';
 import '../cooperative/route_process_config.dart';
 import '../cooperative/rotation_master_list.dart';
 import '../cooperative/driver_suspension.dart';
@@ -32,7 +33,8 @@ class DriverDashboardScreen extends StatefulWidget {
   State<DriverDashboardScreen> createState() => _DriverDashboardScreenState();
 }
 
-class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
+class _DriverDashboardScreenState extends State<DriverDashboardScreen>
+    with OfflineBannerMixin {
   static const MethodChannel _screenChannel = MethodChannel(
     'com.example.puj_dispatch_system/screen',
   );
@@ -60,6 +62,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    initConnectivity();
     _audioPlayer = AudioPlayer();
     _initAudio();
     _listenToVehicleAlerts();
@@ -138,6 +141,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
   @override
   void dispose() {
+    disposeConnectivity();
     _stopAlarm();
     _vehicleAlertSub?.cancel();
     _audioPlayer.dispose();
@@ -1914,7 +1918,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
           ),
           body: SafeArea(
             maintainBottomViewPadding: true,
-            child: !hasVehicle
+            child: Column(
+              children: [
+                buildOfflineBanner(),
+                Expanded(
+                  child: !hasVehicle
                 ? _buildUnassignedVehicleState()
                 : StreamBuilder<DocumentSnapshot>(
                     stream: FirebaseFirestore.instance
@@ -2189,7 +2197,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                       );
                     },
                   ),
-          ),
+                ),  // Expanded
+              ],
+            ),  // Column
+          ),  // SafeArea
           bottomNavigationBar: hasVehicle
               ? StreamBuilder<DocumentSnapshot>(
                   stream: FirebaseFirestore.instance

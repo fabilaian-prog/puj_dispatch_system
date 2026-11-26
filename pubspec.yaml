@@ -28,6 +28,7 @@ dependencies:
   audioplayers: ^6.8.1
   flutter_foreground_task: ^11.0.3
   shared_preferences: ^2.5.5
+  connectivity_plus: ^6.1.4
   google_mlkit_text_recognition: ^0.14.0
   firebase_auth: ^6.7.0
 

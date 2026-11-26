@@ -13,6 +13,7 @@ import '../auth/login_screen.dart';
 import '../../utils/staff_auth.dart';
 import '../../utils/app_colors.dart';
 import '../../utils/app_typography.dart';
+import '../../utils/offline_banner_mixin.dart';
 import '../cooperative/rotation_master_list.dart';
 import '../cooperative/route_process_config.dart';
 import '../cooperative/route_process_widgets.dart';
@@ -37,7 +38,7 @@ class DispatcherDashboardScreen extends StatefulWidget {
 }
 
 class _DispatcherDashboardScreenState extends State<DispatcherDashboardScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, OfflineBannerMixin {
   late TabController _tabController;
 
   static const LatLng _sanPedroCoordinate = LatLng(10.8003, 121.9484);
@@ -127,6 +128,7 @@ class _DispatcherDashboardScreenState extends State<DispatcherDashboardScreen>
   @override
   void initState() {
     super.initState();
+    initConnectivity();
     _tabController = TabController(length: 3, vsync: this);
     _applyDatePreset(DateFilterPreset.allTime, notify: false);
     _fetchRoadGeometry();
@@ -162,6 +164,7 @@ QueueSeeder.seedAll().then((created) async {
 
   @override
   void dispose() {
+    disposeConnectivity();
     _rotationSub?.cancel();
     _autoDispatchTimer?.cancel();
     _tabController.dispose();
@@ -5547,12 +5550,19 @@ QueueSeeder.seedAll().then((created) async {
         ),
         body: SafeArea(
           maintainBottomViewPadding: true,
-          child: TabBarView(
-            controller: _tabController,
+          child: Column(
             children: [
-              _buildQueueAndBayTab(),
-              _buildDispatchHistoryTab(),
-              _buildAuditTrailTab(),
+              buildOfflineBanner(),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildQueueAndBayTab(),
+                    _buildDispatchHistoryTab(),
+                    _buildAuditTrailTab(),
+                  ],
+                ),
+              ),
             ],
           ),
         ),

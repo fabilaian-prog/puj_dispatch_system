@@ -110,6 +110,9 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
   String _fleetStatusFilter = 'ALL';
   String _fleetRouteFilter = 'ALL';
 
+  // Tab 2: Map Filter
+  String _mapFilter = 'ALL';
+
   // Tab 3: Dispatchers Search & Filter
   String _dispatcherSearchQuery = '';
   String _dispatcherTerminalFilter = 'ALL';
@@ -195,7 +198,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
 
   // Tab 6: Complaints Filtering State
   String _selectedStatusFilter = 'ALL';
-  String _selectedDateFilter = '7DAYS';
+  String _selectedDateFilter = 'ALL';
   DateTimeRange? _customDateRange;
 
   static const LatLng _defaultAntiqueCenter = LatLng(10.7420, 121.9470);
@@ -4070,27 +4073,73 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
   // ===========================================================================
   // TAB 2: LIVE MAP
   // ===========================================================================
+  // Returns true when the vehicle's last GPS push is older than 30 seconds.
+  static bool _isVehicleOffline(Map<String, dynamic> data) {
+    final ts = data['last_location_update'];
+    if (ts is Timestamp) {
+      return DateTime.now().difference(ts.toDate()).inSeconds > 30;
+    }
+    // No timestamp at all → treat as offline.
+    return true;
+  }
+
   Widget _buildMapTab() {
+    // All coop vehicles, regardless of dispatch state.
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('vehicles_live').snapshots(),
       builder: (context, snapshot) {
         final allDocs = snapshot.data?.docs ?? [];
-        final docs = allDocs.where((d) => _matchesCooperative(d.data() as Map<String, dynamic>)).toList();
-        final markers = <Marker>[];
+        final coopDocs = allDocs
+            .where((d) => _matchesCooperative(d.data() as Map<String, dynamic>))
+            .toList();
 
-        for (var doc in docs) {
+        // ── Classify every vehicle ──────────────────────────────────────────
+        // isDispatched  → visible to passengers (is_dispatched == true)
+        // isEnRoute     → current_status == 'EN_ROUTE'
+        // isOffline     → last_location_update older than 30 s (or missing)
+        int countDispatched = 0, countEnRoute = 0, countStandby = 0, countOffline = 0;
+        for (final d in coopDocs) {
+          final data = d.data() as Map<String, dynamic>;
+          final dispatched = data['is_dispatched'] == true;
+          final enRoute = (data['current_status'] ?? '').toString().toUpperCase() == 'EN_ROUTE';
+          final offline = _isVehicleOffline(data);
+          if (dispatched) countDispatched++;
+          if (enRoute) countEnRoute++;
+          if (!enRoute) countStandby++;
+          if (offline) countOffline++;
+        }
+
+        // ── Apply selected filter ───────────────────────────────────────────
+        final filteredDocs = coopDocs.where((d) {
+          final data = d.data() as Map<String, dynamic>;
+          switch (_mapFilter) {
+            case 'DISPATCHED':
+              return data['is_dispatched'] == true;
+            case 'EN_ROUTE':
+              return (data['current_status'] ?? '').toString().toUpperCase() == 'EN_ROUTE';
+            case 'STANDBY':
+              return (data['current_status'] ?? '').toString().toUpperCase() != 'EN_ROUTE';
+            case 'OFFLINE':
+              return _isVehicleOffline(data);
+            default: // 'ALL'
+              return true;
+          }
+        }).toList();
+
+        // ── Build markers for filtered vehicles that have GPS coords ────────
+        final markers = <Marker>[];
+        for (final doc in filteredDocs) {
           final data = doc.data() as Map<String, dynamic>;
           final loc = data['location'] as Map<String, dynamic>?;
           final plate = (data['plate_number'] ?? doc.id).toString();
           final jeepName = (data['vehicle_name'] ?? plate).toString();
           final speed = (data['speed_kmh'] as num?)?.toInt() ?? 0;
-          final status = (data['current_status'] ?? 'STANDBY').toString().toUpperCase();
-          final isEnRoute = status == 'EN_ROUTE';
+          final isEnRoute = (data['current_status'] ?? '').toString().toUpperCase() == 'EN_ROUTE';
+          final isOffline = _isVehicleOffline(data);
           final dotColor = _resolveVehicleDotColor(data['vehicle_color']?.toString());
 
           double? rawLat;
           double? rawLng;
-
           if (loc != null && loc['latitude'] != null && loc['longitude'] != null) {
             rawLat = (loc['latitude'] as num).toDouble();
             rawLng = (loc['longitude'] as num).toDouble();
@@ -4099,44 +4148,75 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
             rawLng = (data['longitude'] as num).toDouble();
           }
 
-          final double? finalLat = rawLat;
-          final double? finalLng = rawLng;
+          if (rawLat != null && rawLng != null) {
+            // Label colour: grey when offline, navy when on-road, steel-blue standby.
+            final labelColor = isOffline
+                ? const Color(0xFF94A3B8)
+                : isEnRoute
+                    ? AppColors.primaryNavy
+                    : const Color(0xFF475569);
 
-          if (finalLat != null && finalLng != null) {
-            markers.add(
-              Marker(
-                point: LatLng(finalLat, finalLng),
-                width: 140,
-                height: 56,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: isEnRoute ? AppColors.primaryNavy.withOpacity(0.92) : const Color(0xFF475569),
-                        borderRadius: BorderRadius.circular(5),
-                        border: Border.all(color: Colors.white70, width: 1),
-                        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 3)],
-                      ),
-                      child: Text(
-                        '$jeepName • $speed km/h',
-                        maxLines: 1,
-                        style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.bold),
-                      ),
+            markers.add(Marker(
+              point: LatLng(rawLat, rawLng),
+              width: 140,
+              height: 56,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: labelColor.withOpacity(0.92),
+                      borderRadius: BorderRadius.circular(5),
+                      border: Border.all(color: Colors.white70, width: 1),
+                      boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 3)],
                     ),
-                    const SizedBox(height: 2),
-                    Container(
-                      width: 14,
-                      height: 14,
-                      decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)),
+                    child: Text(
+                      isOffline ? '$jeepName • OFFLINE' : '$jeepName • $speed km/h',
+                      maxLines: 1,
+                      style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.bold),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 2),
+                  Container(
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: isOffline ? const Color(0xFF94A3B8) : dotColor,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                  ),
+                ],
               ),
-            );
+            ));
           }
         }
+
+        // ── Legend entries always shown ─────────────────────────────────────
+        final legend = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '${markers.length} of ${filteredDocs.length} units on map',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.darkSlate),
+            ),
+            const SizedBox(height: 8),
+            _legendDot(AppColors.primaryNavy, 'On the road'),
+            const SizedBox(height: 4),
+            _legendDot(const Color(0xFF475569), 'Standby'),
+            const SizedBox(height: 4),
+            _legendDot(const Color(0xFF94A3B8), 'Offline'),
+            if (filteredDocs.length > markers.length) ...[
+              const SizedBox(height: 6),
+              Text(
+                '${filteredDocs.length - markers.length} without GPS signal',
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: CoopTone.warning.fg),
+              ),
+            ],
+          ],
+        );
 
         return Stack(
           children: [
@@ -4153,6 +4233,35 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                 MarkerLayer(markers: markers),
               ],
             ),
+            // ── Filter chips — bottom of screen ────────────────────────────
+            Positioned(
+              bottom: 16,
+              left: 12,
+              right: 12,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.borderSubtle),
+                    boxShadow: const [BoxShadow(color: Color(0x290F172A), blurRadius: 10, offset: Offset(0, 3))],
+                  ),
+                  child: CoopChoiceChips(
+                    value: _mapFilter,
+                    onChanged: (v) => setState(() => _mapFilter = v),
+                    choices: [
+                      CoopChoice('ALL',        'All',        count: coopDocs.length),
+                      CoopChoice('DISPATCHED', 'Dispatched', count: countDispatched),
+                      CoopChoice('EN_ROUTE',   'On the road',count: countEnRoute),
+                      CoopChoice('STANDBY',    'Standby',    count: countStandby),
+                      CoopChoice('OFFLINE',    'Offline',    count: countOffline),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            // ── Legend + counter — top-left ─────────────────────────────────
             Positioned(
               top: 12,
               left: 12,
@@ -4164,28 +4273,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                   border: Border.all(color: AppColors.borderSubtle),
                   boxShadow: const [BoxShadow(color: Color(0x290F172A), blurRadius: 10, offset: Offset(0, 3))],
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('${markers.length} of ${docs.length} units on the map',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.darkSlate)),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _legendDot(AppColors.primaryNavy, 'On the road'),
-                        const SizedBox(width: 14),
-                        _legendDot(const Color(0xFF475569), 'Standby'),
-                      ],
-                    ),
-                    if (docs.length > markers.length) ...[
-                      const SizedBox(height: 6),
-                      Text('${docs.length - markers.length} without a GPS signal',
-                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: CoopTone.warning.fg)),
-                    ],
-                  ],
-                ),
+                child: legend,
               ),
             ),
           ],
@@ -6619,7 +6707,11 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
 
     final openReports = allComplaints.where((d) {
       final c = m(d);
+      // Use _coopPlatesForBadge (kept live by a dedicated subscription) so the
+      // overview count matches the tab badge count even when vehicles lack the
+      // cooperative_id/name fields.
       final mine = _matchesCooperative(c) ||
+          _coopPlatesForBadge.contains(_normalizePlate(c['plate_number']?.toString() ?? '')) ||
           plates.contains(_normalizePlate(c['plate_number']?.toString() ?? ''));
       if (!mine) return false;
       return !(c['status'] ?? '').toString().toUpperCase().contains('RESOLVED');
