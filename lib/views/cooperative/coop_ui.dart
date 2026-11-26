@@ -572,22 +572,27 @@ class CoopSegmented extends StatelessWidget {
                           ]
                         : null,
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(icons[i],
-                          size: 17,
+                          size: 15,
                           color: i == index
                               ? AppColors.primaryNavy
                               : AppColors.textMuted),
-                      const SizedBox(width: 7),
-                      Text(labels[i],
-                          style: TextStyle(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w800,
-                              color: i == index
-                                  ? AppColors.darkSlate
-                                  : AppColors.textMuted)),
+                      const SizedBox(height: 4),
+                      Text(
+                        labels[i],
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w800,
+                            color: i == index
+                                ? AppColors.darkSlate
+                                : AppColors.textMuted),
+                      ),
                     ],
                   ),
                 ),

@@ -128,6 +128,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
   final TextEditingController _driverSearchCtrl = TextEditingController();
   final TextEditingController _dispatcherSearchCtrl = TextEditingController();
   final TextEditingController _auditSearchCtrl = TextEditingController();
+  final TextEditingController _dispatchHistorySearchCtrl = TextEditingController();
 
   late final Stream<QuerySnapshot> _vehiclesStream =
       FirebaseFirestore.instance.collection('vehicles_live').snapshots();
@@ -195,6 +196,25 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
   // Tab 5: Queue Audit Filter
   String _auditSearchQuery = '';
   String _auditTypeFilter = 'ALL';
+
+  // Tab: Dispatch History Filter
+  String _dispatchHistorySearchQuery = '';
+  // 'ALL' | 'AM' | 'PM'
+  String _dispatchHistoryShiftFilter = 'ALL';
+  DateTime _dispatchHistoryFocusedDate = DateTime.now();
+  // null = show all dates; non-null = restrict to that calendar day
+  DateTime? _dispatchHistoryDateFilter;
+  // Per-route streams: lazily created keyed by routeId
+  final Map<String, Stream<QuerySnapshot>> _dispatchStreams = {};
+  Stream<QuerySnapshot> _dispatchStreamForRoute(String routeId) {
+    return _dispatchStreams.putIfAbsent(
+      routeId,
+      () => FirebaseFirestore.instance
+          .collection('dispatch_logs')
+          .where('route_id', isEqualTo: routeId)
+          .snapshots(),
+    );
+  }
 
   // Tab 6: Complaints Filtering State
   String _selectedStatusFilter = 'ALL';
@@ -337,6 +357,7 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
     _driverSearchCtrl.dispose();
     _dispatcherSearchCtrl.dispose();
     _auditSearchCtrl.dispose();
+    _dispatchHistorySearchCtrl.dispose();
     _tabController.dispose();
     super.dispose();
   }
@@ -890,12 +911,52 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                   ),
                   const SizedBox(height: 18),
 
+                  // ── Primary action row ───────────────────────────────────────
                   Row(
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
+                          icon: const Icon(Icons.edit_rounded, size: 17),
+                          label: const Text('Edit', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.primaryNavy,
+                            side: const BorderSide(color: AppColors.primaryNavy),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          onPressed: () {
+                            Navigator.pop(dialogCtx);
+                            _showEditDriverModal(dData, driverId);
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.lock_reset_rounded, size: 17),
+                          label: const Text('Reset PIN', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.commuterTeal,
+                            side: const BorderSide(color: AppColors.commuterTeal),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          onPressed: () {
+                            Navigator.pop(dialogCtx);
+                            _showResetPinModal(
+                              targetUserId: driverId,
+                              targetUserName: fullName,
+                              targetRole: 'Driver',
+                              currentPin: pin,
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
                           icon: const Icon(Icons.campaign_rounded, size: 17),
-                          label: const Text('Send Notice', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                          label: const Text('Notice', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: const Color(0xFFD97706),
                             side: const BorderSide(color: Color(0xFFD97706)),
@@ -908,57 +969,6 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                               preselectedUserId: driverId,
                               preselectedUserName: fullName,
                               preselectedRole: 'DRIVER',
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.swap_horiz_rounded, size: 17),
-                          label: const Text('Reassign', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.commuterTeal,
-                            side: const BorderSide(color: AppColors.commuterTeal),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                          onPressed: () {
-                            Navigator.pop(dialogCtx);
-                            if (assignedVehicle != 'UNASSIGNED') {
-                              _showAssignDriverModal(
-                                vehicleId: assignedVehicle,
-                                currentDriverId: driverId,
-                              );
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Assign vehicle directly from the Fleet tab.'),
-                                  backgroundColor: AppColors.primaryNavy,
-                                ),
-                              );
-                            }
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.lock_reset_rounded, size: 17),
-                          label: const Text('Reset PIN', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.primaryNavy,
-                            side: const BorderSide(color: AppColors.primaryNavy),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                          onPressed: () {
-                            Navigator.pop(dialogCtx);
-                            _showResetPinModal(
-                              targetUserId: driverId,
-                              targetUserName: fullName,
-                              targetRole: 'Driver',
-                              currentPin: pin,
                             );
                           },
                         ),
@@ -1533,6 +1543,708 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
       ),
     );
   }
+
+
+  // ===========================================================================
+  // EDIT DRIVER MODAL
+  // ===========================================================================
+  Future<void> _showEditDriverModal(Map<String, dynamic> dData, String driverId) async {
+    // Pre-load available vehicles for the assignment dropdown
+    List<String> availableJeepneys = [];
+    try {
+      final vSnap = await FirebaseFirestore.instance.collection('vehicles_live').get();
+      availableJeepneys = vSnap.docs
+          .where((d) => _matchesCooperative(d.data()))
+          .map((d) => d.id)
+          .toList()
+        ..sort();
+    } catch (_) {}
+    if (!mounted) return;
+
+    // Pre-populate controllers from existing data
+    final firstNameController = TextEditingController(text: (dData['first_name'] ?? '').toString());
+    final lastNameController  = TextEditingController(text: (dData['last_name']  ?? '').toString());
+    final middleInitialController = TextEditingController(
+      text: (dData['middle_initial'] ?? '').toString().toUpperCase(),
+    );
+    final phoneController    = TextEditingController(text: (dData['contact_number'] ?? '').toString());
+    final licenseController  = TextEditingController(text: (dData['license_number'] ?? '').toString());
+
+    String selectedVehicle   = (dData['assigned_vehicle'] ?? 'UNASSIGNED').toString();
+    String? selectedSex      = (dData['sex'] as String?)?.toUpperCase();
+    if (selectedSex != 'MALE' && selectedSex != 'FEMALE') selectedSex = null;
+
+    // License card OCR state — seed from existing stored card if present
+    final existingCardBase64 = dData['license_card_base64'] as String?;
+    Uint8List? licenseImageBytes;
+    String?    licenseImageFileName;
+    String?    scannedRawText;
+    bool isOcrScanning      = false;
+    bool isLicenseVerified  = dData['is_license_verified'] == true;
+    // If there's already a verified card on file, start verified
+    bool cardIsFromFirestore = existingCardBase64 != null && existingCardBase64.isNotEmpty;
+    String ocrVerificationMessage = isLicenseVerified
+        ? 'Existing verified LTO Driver\'s License on file.'
+        : '';
+    bool detailsAutoFilled = false;
+
+    if (cardIsFromFirestore) {
+      try { licenseImageBytes = base64Decode(existingCardBase64!); } catch (_) {}
+      licenseImageFileName = 'Existing card on file';
+    }
+
+    bool isSubmitting = false;
+    final formKey = GlobalKey<FormState>();
+    final ImagePicker picker = ImagePicker();
+
+    // ── OCR helpers (same logic as Add Driver) ──────────────────────────────
+    String normalizeForMatch(String input) {
+      return _LicenseOcrParser.stripAccents(input)
+          .toUpperCase()
+          .replaceAll('Ñ', 'N')
+          .replaceAll(RegExp(r'[^A-Z0-9\s]'), ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+    }
+
+    List<String> missingNameTokens(String normalizedOcr, String name) {
+      final tokens = normalizeForMatch(name).split(' ').where((t) => t.length >= 2).toList();
+      return tokens.where((t) => !normalizedOcr.contains(t)).toList();
+    }
+
+    void verifyExtractedLicense(String rawText, StateSetter setDialogState) {
+      final trimmed = rawText.trim();
+      if (trimmed.length < 15) {
+        setDialogState(() {
+          isLicenseVerified = false;
+          ocrVerificationMessage = 'Card is blurry or unreadable. Please capture closer under good lighting.';
+        });
+        return;
+      }
+      final lower = trimmed.toLowerCase();
+      final bool isLegitDlDocument = (lower.contains('driver') && lower.contains('license')) ||
+          (lower.contains('land transportation') || lower.contains('lto')) ||
+          ((lower.contains('republika') || lower.contains('republic of the philippines')) && lower.contains('driver'));
+      if (!isLegitDlDocument) {
+        setDialogState(() {
+          isLicenseVerified = false;
+          ocrVerificationMessage = 'Unrecognized card: Not an official LTO Driver\'s License.';
+        });
+        return;
+      }
+      final normalizedOcr = normalizeForMatch(rawText);
+      final ocrForNames = '$normalizedOcr ${normalizeForMatch(_LicenseOcrParser.fixConfusables(rawText))}';
+      final enteredFirst = firstNameController.text.trim();
+      final enteredLast  = lastNameController.text.trim();
+      final enteredMi    = normalizeForMatch(middleInitialController.text);
+
+      if (enteredLast.isNotEmpty) {
+        final missing = missingNameTokens(ocrForNames, enteredLast);
+        if (missing.isNotEmpty) {
+          setDialogState(() {
+            isLicenseVerified = false;
+            ocrVerificationMessage = 'Last Name Mismatch: "$enteredLast" was not detected on this license.';
+          });
+          return;
+        }
+      }
+      if (enteredFirst.isNotEmpty) {
+        final missing = missingNameTokens(ocrForNames, enteredFirst);
+        if (missing.isNotEmpty) {
+          setDialogState(() {
+            isLicenseVerified = false;
+            ocrVerificationMessage = 'First Name Mismatch: "$enteredFirst" was not detected on this license.';
+          });
+          return;
+        }
+        if (enteredMi.isNotEmpty) {
+          final firstTokens = normalizeForMatch(enteredFirst).split(' ').where((t) => t.isNotEmpty).toList();
+          final lastFirstToken = firstTokens.isNotEmpty ? firstTokens.last : '';
+          final idx = lastFirstToken.isEmpty ? -1 : normalizedOcr.indexOf(lastFirstToken);
+          if (idx != -1) {
+            final after = normalizedOcr.substring(idx + lastFirstToken.length).trimLeft();
+            if (after.isNotEmpty && !after.startsWith(enteredMi[0])) {
+              setDialogState(() {
+                isLicenseVerified = false;
+                ocrVerificationMessage = 'Middle Initial Mismatch.';
+              });
+              return;
+            }
+          }
+        }
+      }
+      if (selectedSex != null) {
+        final detectedSex = _LicenseOcrParser.detectSex(rawText.toUpperCase());
+        if (detectedSex != null && detectedSex != selectedSex) {
+          setDialogState(() {
+            isLicenseVerified = false;
+            ocrVerificationMessage = 'Sex Mismatch: Card indicates "${detectedSex == 'MALE' ? 'Male' : 'Female'}".';
+          });
+          return;
+        }
+      }
+      final cleanOcr = rawText.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();
+      final enteredLicense = licenseController.text.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();
+      if (enteredLicense.isNotEmpty && enteredLicense.length >= 6) {
+        if (!_LicenseOcrParser.digitize(cleanOcr).contains(_LicenseOcrParser.digitize(enteredLicense))) {
+          setDialogState(() {
+            isLicenseVerified = false;
+            ocrVerificationMessage = 'License Number Mismatch: "${licenseController.text.trim()}" not detected.';
+          });
+          return;
+        }
+      } else {
+        final licenseRegex = RegExp(r'[A-Z]\d{2}[-\s]?\d{2}[-\s]?\d{6}');
+        final match = licenseRegex.firstMatch(rawText.toUpperCase());
+        if (match != null && licenseController.text.isEmpty) {
+          licenseController.text = match.group(0)!.replaceAll(' ', '-');
+        }
+      }
+      HapticFeedback.lightImpact();
+      setDialogState(() {
+        isLicenseVerified = true;
+        ocrVerificationMessage = 'LTO Driver\'s License verified successfully.${detailsAutoFilled ? ' Details were auto-filled — please double-check.' : ''}';
+      });
+    }
+
+    Future<String> performWebCloudOcr(Uint8List imageBytes) async {
+      try {
+        final base64Image = 'data:image/jpeg;base64,${base64Encode(imageBytes)}';
+        final response = await http.post(
+          Uri.parse('https://api.ocr.space/parse/image'),
+          headers: {'apikey': 'helloworld'},
+          body: {'base64Image': base64Image, 'language': 'eng', 'isOverlayRequired': 'false', 'OCREngine': '2'},
+        );
+        if (response.statusCode == 200) {
+          final json = jsonDecode(response.body);
+          final parsedResults = json['ParsedResults'] as List<dynamic>?;
+          if (parsedResults != null && parsedResults.isNotEmpty) {
+            return (parsedResults[0]['ParsedText'] ?? '').toString();
+          }
+        }
+      } catch (_) {}
+      return '';
+    }
+
+    Future<void> pickAndProcessLicense(ImageSource source, StateSetter setDialogState) async {
+      try {
+        final XFile? file = await picker.pickImage(source: source, maxWidth: 1400, maxHeight: 1400, imageQuality: 85);
+        if (file == null) return;
+        final bytes = await file.readAsBytes();
+        if (bytes.lengthInBytes > 1024 * 1024 * 2) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Image too large. Please take a cropped, clear photo.'),
+            backgroundColor: AppColors.errorCrimson,
+          ));
+          return;
+        }
+        setDialogState(() {
+          licenseImageBytes = bytes;
+          licenseImageFileName = file.name;
+          isOcrScanning = true;
+          ocrVerificationMessage = '';
+          detailsAutoFilled = false;
+          cardIsFromFirestore = false;
+        });
+        String extractedText = '';
+        if (kIsWeb) {
+          extractedText = await performWebCloudOcr(bytes);
+        } else {
+          final inputImage = InputImage.fromFilePath(file.path);
+          final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
+          final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
+          await textRecognizer.close();
+          extractedText = recognizedText.text;
+        }
+        scannedRawText = extractedText;
+        final parsed = _LicenseOcrParser.parse(extractedText);
+        if (parsed != null) {
+          setDialogState(() {
+            if (parsed.hasName) {
+              lastNameController.text  = parsed.lastName!;
+              firstNameController.text = parsed.firstName!;
+              final mid = parsed.middleName;
+              middleInitialController.text = (mid == null || mid.isEmpty) ? '' : mid[0].toUpperCase();
+            }
+            if (parsed.sex != null) selectedSex = parsed.sex;
+            if (parsed.licenseNumber != null) licenseController.text = parsed.licenseNumber!;
+            detailsAutoFilled = parsed.hasName || parsed.sex != null || parsed.licenseNumber != null;
+          });
+        }
+        verifyExtractedLicense(extractedText, setDialogState);
+      } catch (e) {
+        setDialogState(() {
+          isLicenseVerified = false;
+          ocrVerificationMessage = 'Scanner error: $e';
+        });
+      } finally {
+        setDialogState(() => isOcrScanning = false);
+      }
+    }
+
+    void showImageSourcePicker(StateSetter setDialogState) {
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+        builder: (ctx) => _ts(ctx, SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 38, height: 4,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(color: AppColors.borderSubtle, borderRadius: BorderRadius.circular(2)),
+                ),
+                const Text('Update LTO Driver\'s License', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+                const SizedBox(height: 6),
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.camera_alt_outlined, color: AppColors.commuterTeal, size: 22),
+                  title: const Text('Capture Card with Camera', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                  onTap: () { Navigator.pop(ctx); pickAndProcessLicense(ImageSource.camera, setDialogState); },
+                ),
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.photo_library_outlined, color: AppColors.commuterTeal, size: 22),
+                  title: const Text('Choose from Photo Gallery', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                  onTap: () { Navigator.pop(ctx); pickAndProcessLicense(ImageSource.gallery, setDialogState); },
+                ),
+                if (licenseImageBytes != null && cardIsFromFirestore == false) ...[
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.delete_outline_rounded, color: AppColors.errorCrimson, size: 22),
+                    title: const Text('Remove License Card', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.errorCrimson)),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      setDialogState(() {
+                        licenseImageBytes = null;
+                        licenseImageFileName = null;
+                        scannedRawText = null;
+                        isLicenseVerified = false;
+                        ocrVerificationMessage = '';
+                      });
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        )),
+      );
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final hasImage = licenseImageBytes != null;
+          return _ts(context, SafeArea(
+            maintainBottomViewPadding: true,
+            child: Dialog(
+              backgroundColor: Colors.white,
+              elevation: 6,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: const BorderSide(color: AppColors.borderSubtle),
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: 440, maxHeight: _dialogMaxHeight(context, 700)),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                  child: Form(
+                    key: formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // ── Header ──────────────────────────────────────────
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(7),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(Icons.edit_rounded, color: AppColors.primaryNavy, size: 20),
+                            ),
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Edit Driver', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.darkSlate)),
+                                  Text('Changes are saved immediately to Firestore', style: TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              icon: const Icon(Icons.close_rounded, size: 18, color: AppColors.textMuted),
+                              onPressed: () => Navigator.pop(dialogCtx),
+                            ),
+                          ],
+                        ),
+                        const Divider(height: 18, color: AppColors.borderSubtle),
+
+                        // ── First Name ──────────────────────────────────────
+                        TextFormField(
+                          controller: firstNameController,
+                          textCapitalization: TextCapitalization.words,
+                          style: const TextStyle(fontSize: 14),
+                          decoration: _buildInputDeco('First Name *', Icons.badge_outlined, hint: 'e.g. Pedro'),
+                          validator: (v) => (v == null || v.trim().isEmpty) ? 'First name is required' : null,
+                          onChanged: (_) { if (scannedRawText != null) verifyExtractedLicense(scannedRawText!, setDialogState); },
+                        ),
+                        const SizedBox(height: 10),
+
+                        // ── Last Name ───────────────────────────────────────
+                        TextFormField(
+                          controller: lastNameController,
+                          textCapitalization: TextCapitalization.words,
+                          style: const TextStyle(fontSize: 14),
+                          decoration: _buildInputDeco('Last Name *', Icons.badge_outlined, hint: 'e.g. Penduko'),
+                          validator: (v) => (v == null || v.trim().isEmpty) ? 'Last name is required' : null,
+                          onChanged: (_) { if (scannedRawText != null) verifyExtractedLicense(scannedRawText!, setDialogState); },
+                        ),
+                        const SizedBox(height: 10),
+
+                        // ── M.I. + Sex ──────────────────────────────────────
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 4,
+                              child: TextFormField(
+                                controller: middleInitialController,
+                                textCapitalization: TextCapitalization.characters,
+                                inputFormatters: [
+                                  LengthLimitingTextInputFormatter(1),
+                                  FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z]')),
+                                ],
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                                decoration: _buildInputDeco('M.I.', Icons.text_fields_rounded, hint: 'S'),
+                                onChanged: (_) { if (scannedRawText != null) verifyExtractedLicense(scannedRawText!, setDialogState); },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              flex: 6,
+                              child: DropdownButtonFormField<String>(
+                                value: selectedSex,
+                                isDense: true,
+                                isExpanded: true,
+                                hint: const Text('Select', style: TextStyle(fontSize: 13.5, color: AppColors.textMuted)),
+                                decoration: _buildInputDeco('Sex *', Icons.wc_rounded),
+                                items: const [
+                                  DropdownMenuItem(value: 'MALE',   child: Text('Male',   style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold))),
+                                  DropdownMenuItem(value: 'FEMALE', child: Text('Female', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold))),
+                                ],
+                                validator: (v) => v == null ? 'Sex is required' : null,
+                                onChanged: (val) {
+                                  if (val != null) {
+                                    setDialogState(() => selectedSex = val);
+                                    if (scannedRawText != null) verifyExtractedLicense(scannedRawText!, setDialogState);
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+
+                        // ── Contact Number ──────────────────────────────────
+                        TextFormField(
+                          controller: phoneController,
+                          keyboardType: TextInputType.phone,
+                          style: const TextStyle(fontSize: 14),
+                          decoration: _buildInputDeco('Contact Number *', Icons.phone_outlined, hint: '09XXXXXXXXX'),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(11),
+                          ],
+                          validator: (v) => (v == null || v.trim().isEmpty) ? 'Contact number is required' : null,
+                        ),
+                        const SizedBox(height: 10),
+
+                        // ── License Number ──────────────────────────────────
+                        TextFormField(
+                          controller: licenseController,
+                          textCapitalization: TextCapitalization.characters,
+                          style: const TextStyle(fontSize: 14, fontFamily: 'monospace', fontWeight: FontWeight.w700),
+                          decoration: _buildInputDeco('LTO License Number (optional)', Icons.credit_card_rounded, hint: 'e.g. D01-23-456789'),
+                          onChanged: (_) { if (scannedRawText != null) verifyExtractedLicense(scannedRawText!, setDialogState); },
+                        ),
+                        const SizedBox(height: 12),
+
+                        // ── License Card scan section ───────────────────────
+                        Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            border: Border.all(
+                              color: isLicenseVerified
+                                  ? const Color(0xFF10B981)
+                                  : (hasImage ? const Color(0xFFEF4444) : const Color(0xFFCBD5E1)),
+                              width: 1.4,
+                            ),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text('LTO Driver\'s License Card', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: AppColors.darkSlate)),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          licenseImageFileName ?? 'No card attached',
+                                          style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: isOcrScanning ? null : () => showImageSourcePicker(setDialogState),
+                                    icon: Icon(hasImage ? Icons.refresh_rounded : Icons.camera_alt_outlined, size: 15),
+                                    label: Text(
+                                      hasImage ? (cardIsFromFirestore ? 'Replace' : 'Re-scan') : 'Scan Card',
+                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                                    ),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: AppColors.commuterTeal,
+                                      side: const BorderSide(color: AppColors.commuterTeal, width: 1.2),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      minimumSize: Size.zero,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (isOcrScanning) ...[
+                                const SizedBox(height: 10),
+                                Row(children: const [
+                                  SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.commuterTeal)),
+                                  SizedBox(width: 8),
+                                  Expanded(child: Text('Scanning license via OCR...', style: TextStyle(fontSize: 13, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
+                                ]),
+                              ],
+                              if (hasImage && !isOcrScanning) ...[
+                                const SizedBox(height: 10),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                  decoration: BoxDecoration(
+                                    color: isLicenseVerified ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: isLicenseVerified ? const Color(0xFFA7F3D0) : const Color(0xFFFECACA),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 1.0),
+                                        child: Icon(
+                                          isLicenseVerified ? Icons.check_circle_rounded : Icons.warning_amber_rounded,
+                                          color: isLicenseVerified ? const Color(0xFF059669) : const Color(0xFFDC2626),
+                                          size: 16,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 7),
+                                      Expanded(
+                                        child: Text(
+                                          ocrVerificationMessage.isNotEmpty ? ocrVerificationMessage : 'Unverified license card.',
+                                          style: TextStyle(
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.w700,
+                                            height: 1.3,
+                                            color: isLicenseVerified ? const Color(0xFF065F46) : const Color(0xFF991B1B),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Image.memory(licenseImageBytes!, height: 120, width: double.infinity, fit: BoxFit.cover),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+
+                        // ── Vehicle assignment ──────────────────────────────
+                        DropdownButtonFormField<String>(
+                          value: availableJeepneys.contains(selectedVehicle) ? selectedVehicle : 'UNASSIGNED',
+                          isDense: true,
+                          isExpanded: true,
+                          decoration: _buildInputDeco('Assign Vehicle (Optional)', Icons.directions_bus_outlined),
+                          items: [
+                            const DropdownMenuItem(
+                              value: 'UNASSIGNED',
+                              child: Text('UNASSIGNED', style: TextStyle(fontSize: 13.5, color: AppColors.textMuted)),
+                            ),
+                            ...availableJeepneys.map((jp) => DropdownMenuItem(
+                              value: jp,
+                              child: Text(jp, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
+                            )),
+                          ],
+                          onChanged: (val) { if (val != null) setDialogState(() => selectedVehicle = val); },
+                        ),
+                        const SizedBox(height: 18),
+
+                        // ── Action buttons ──────────────────────────────────
+                        Row(
+                          children: [
+                            Expanded(
+                              child: SizedBox(
+                                height: 42,
+                                child: OutlinedButton(
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(color: AppColors.borderSubtle),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  onPressed: isSubmitting ? null : () => Navigator.pop(dialogCtx),
+                                  child: const Text('Cancel', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: AppColors.darkSlate)),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: SizedBox(
+                                height: 42,
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primaryNavy,
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  onPressed: isSubmitting
+                                      ? null
+                                      : () async {
+                                          if (!formKey.currentState!.validate()) return;
+
+                                          // If a NEW card was scanned (not from Firestore), it must be verified
+                                          if (hasImage && !cardIsFromFirestore && !isLicenseVerified) {
+                                            HapticFeedback.mediumImpact();
+                                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                              content: Text('Cannot save: Attached license card failed verification.'),
+                                              backgroundColor: AppColors.errorCrimson,
+                                              duration: Duration(seconds: 4),
+                                            ));
+                                            return;
+                                          }
+
+                                          setDialogState(() => isSubmitting = true);
+                                          try {
+                                            final firstName = firstNameController.text.trim();
+                                            final lastName  = lastNameController.text.trim();
+                                            final mi        = middleInitialController.text.trim().toUpperCase();
+                                            final fullName  = mi.isNotEmpty ? '$firstName $mi. $lastName' : '$firstName $lastName';
+                                            final licenseNo = licenseController.text.trim().toUpperCase();
+
+                                            // Build base64 for new card (null = no change if still from Firestore)
+                                            final String? newCardBase64 = !hasImage
+                                                ? null   // removed card → will store null
+                                                : cardIsFromFirestore
+                                                    ? existingCardBase64  // unchanged
+                                                    : base64Encode(licenseImageBytes!);
+
+                                            final bool newVerified = hasImage && isLicenseVerified;
+
+                                            final Map<String, dynamic> updates = {
+                                              'full_name':       fullName,
+                                              'first_name':      firstName,
+                                              'last_name':       lastName,
+                                              'middle_initial':  mi,
+                                              'sex':             selectedSex,
+                                              'contact_number':  phoneController.text.trim(),
+                                              'license_number':  licenseNo.isEmpty ? null : licenseNo,
+                                              'license_card_base64': newCardBase64,
+                                              'is_license_verified': newVerified,
+                                              'license_verified_at': newVerified && !cardIsFromFirestore
+                                                  ? FieldValue.serverTimestamp()
+                                                  : dData['license_verified_at'],
+                                              'assigned_vehicle': selectedVehicle,
+                                            };
+
+                                            final batch = FirebaseFirestore.instance.batch();
+                                            final driverRef = FirebaseFirestore.instance.collection('users').doc(driverId);
+                                            batch.update(driverRef, updates);
+
+                                            // Update vehicle assignment if changed
+                                            final prevVehicle = (dData['assigned_vehicle'] ?? 'UNASSIGNED').toString();
+                                            if (prevVehicle != selectedVehicle) {
+                                              // Unlink from old vehicle
+                                              if (prevVehicle != 'UNASSIGNED') {
+                                                final oldRef = FirebaseFirestore.instance.collection('vehicles_live').doc(prevVehicle);
+                                                batch.update(oldRef, {'driver_id': null, 'driver_name': null});
+                                              }
+                                              // Link to new vehicle
+                                              if (selectedVehicle != 'UNASSIGNED') {
+                                                final newRef = FirebaseFirestore.instance.collection('vehicles_live').doc(selectedVehicle);
+                                                batch.update(newRef, {'driver_id': driverId, 'driver_name': fullName});
+                                              }
+                                            } else if (prevVehicle != 'UNASSIGNED') {
+                                              // Name may have changed — keep vehicle in sync
+                                              final vRef = FirebaseFirestore.instance.collection('vehicles_live').doc(prevVehicle);
+                                              batch.update(vRef, {'driver_name': fullName});
+                                            }
+
+                                            await batch.commit();
+
+                                            if (!context.mounted) return;
+                                            Navigator.pop(dialogCtx);
+                                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                              content: Text('$fullName updated successfully.'),
+                                              backgroundColor: const Color(0xFF059669),
+                                            ));
+                                          } catch (e) {
+                                            setDialogState(() => isSubmitting = false);
+                                            if (!context.mounted) return;
+                                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                              content: Text('Save failed: $e'),
+                                              backgroundColor: AppColors.errorCrimson,
+                                            ));
+                                          }
+                                        },
+                                  child: isSubmitting
+                                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                      : const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ));
+        },
+      ),
+    );
+  }
+
 
   // ===========================================================================
   // RESET PIN MODAL
@@ -4503,6 +5215,615 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
     );
   }
 
+
+  // ===========================================================================
+  // TAB: DISPATCH HISTORY (all routes the coop operates on)
+  // ===========================================================================
+  Widget _buildDispatchHistoryTab() {
+    final routes = _coopAuthorizedRoutes;
+
+    // Merge snapshots from all authorized routes into one stream via StreamBuilder chain.
+    // We use a single vehicles_live StreamBuilder to get the coop's plate set, then
+    // nest route snapshots inside it.
+    return StreamBuilder<QuerySnapshot>(
+      stream: _vehiclesStream,
+      builder: (context, vehicleSnap) {
+        // Build the set of plate/docId values that belong to this cooperative.
+        final Set<String> coopVehicleIds = {};
+        if (vehicleSnap.hasData) {
+          for (final d in vehicleSnap.data!.docs) {
+            final data = d.data() as Map<String, dynamic>;
+            if (_matchesCooperative(data)) {
+              coopVehicleIds.add(_normalizePlate(d.id));
+              final pn = (data['plate_number'] ?? '').toString();
+              if (pn.isNotEmpty) coopVehicleIds.add(_normalizePlate(pn));
+            }
+          }
+        }
+
+        // For each authorized route, listen to dispatch_logs independently,
+        // then flatten and merge the results.
+        if (routes.isEmpty) {
+          return const Center(
+            child: Text('No authorized routes configured.',
+                style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+          );
+        }
+
+        // Build a list of StreamBuilder widgets — one per route — that all
+        // feed into one shared rendering function once the last one resolves.
+        // Because Firestore streams are cheap and routes are typically 1–3,
+        // this is simpler than merging streams manually.
+        return _DispatchHistoryMerger(
+          routeIds: routes,
+          streamForRoute: _dispatchStreamForRoute,
+          builder: (context, allDocs) {
+            return _buildDispatchHistoryBody(context, allDocs, coopVehicleIds);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildDispatchHistoryBody(
+    BuildContext context,
+    List<QueryDocumentSnapshot> rawDocs,
+    Set<String> coopVehicleIds,
+  ) {
+    // ── Date + shift filter ───────────────────────────────────────────────────
+    bool passesFilters(Timestamp? ts) {
+      if (ts == null) return true;
+      final dt = ts.toDate().toLocal();
+      // Date filter
+      if (_dispatchHistoryDateFilter != null) {
+        final f = _dispatchHistoryDateFilter!;
+        if (dt.year != f.year || dt.month != f.month || dt.day != f.day) {
+          return false;
+        }
+      }
+      // Shift filter
+      if (_dispatchHistoryShiftFilter == 'ALL') return true;
+      final hour = dt.hour;
+      if (_dispatchHistoryShiftFilter == 'AM') return hour >= 5 && hour < 13;
+      if (_dispatchHistoryShiftFilter == 'PM') return hour >= 13 && hour < 22;
+      return true;
+    }
+
+    // ── Search + date + shift filter ──────────────────────────────────────────
+    final q = _dispatchHistorySearchQuery.trim().toUpperCase();
+    final filtered = rawDocs.where((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      final vehicleId = (data['vehicle_id'] ?? '').toString().toUpperCase();
+      final dispatcherName = (data['dispatcher_name'] ?? '').toString().toUpperCase();
+      final Timestamp? ts = data['dispatched_at'] as Timestamp?;
+      if (!passesFilters(ts)) return false;
+      if (q.isNotEmpty && !vehicleId.contains(q) && !dispatcherName.contains(q)) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    // ── Sort newest first ─────────────────────────────────────────────────────
+    filtered.sort((a, b) {
+      final tA = (a.data() as Map<String, dynamic>)['dispatched_at'] as Timestamp?;
+      final tB = (b.data() as Map<String, dynamic>)['dispatched_at'] as Timestamp?;
+      if (tA == null && tB == null) return 0;
+      if (tA == null) return 1;
+      if (tB == null) return -1;
+      return tB.compareTo(tA);
+    });
+
+    // ── KPI counts ───────────────────────────────────────────────────────────
+    final totalDispatches = rawDocs.length;
+    final coopDispatches = rawDocs.where((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      final vid = _normalizePlate((data['vehicle_id'] ?? '').toString());
+      return coopVehicleIds.contains(vid);
+    }).length;
+
+    // ── Group by date ─────────────────────────────────────────────────────────
+    final Map<String, List<Map<String, dynamic>>> groupedLogs = {};
+    final Map<String, DateTime> groupDateMap = {};
+    for (final doc in filtered) {
+      final data = doc.data() as Map<String, dynamic>;
+      final ts = data['dispatched_at'] as Timestamp?;
+      final dt = ts != null ? ts.toDate().toLocal() : DateTime.now();
+      final key =
+          '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+      groupedLogs.putIfAbsent(key, () => []).add(data);
+      groupDateMap.putIfAbsent(key, () => dt);
+    }
+
+    return LayoutBuilder(builder: (context, constraints) {
+      final double pad = constraints.maxWidth >= 850 ? 28 : 18;
+      return ListView(
+        padding: EdgeInsets.fromLTRB(pad, 18, pad, 40),
+        children: [
+          // ── KPI Row ─────────────────────────────────────────────────────────
+          Row(
+            children: [
+              _buildKpiCard(
+                'TOTAL DISPATCHES',
+                '$totalDispatches',
+                Icons.check_circle_outline_rounded,
+                const Color(0xFF059669),
+              ),
+              const SizedBox(width: 10),
+              _buildKpiCard(
+                'OUR UNITS',
+                '$coopDispatches',
+                Icons.directions_bus_rounded,
+                AppColors.commuterTeal,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // ── Filter bar ───────────────────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.borderSubtle),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Search + date stepper row
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 40,
+                        child: TextField(
+                          controller: _dispatchHistorySearchCtrl,
+                          onChanged: (val) =>
+                              setState(() => _dispatchHistorySearchQuery = val),
+                          style: const TextStyle(fontSize: 13),
+                          decoration: InputDecoration(
+                            hintText: 'Search plate / dispatcher...',
+                            hintStyle: const TextStyle(
+                                fontSize: 12, color: AppColors.textMuted),
+                            prefixIcon: const Icon(Icons.search_rounded,
+                                size: 18, color: AppColors.textMuted),
+                            contentPadding: EdgeInsets.zero,
+                            filled: true,
+                            fillColor: AppColors.backgroundSlate,
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide.none),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Date stepper
+                    _buildDispatchDateStepper(),
+                    if (_dispatchHistoryDateFilter != null) ...[
+                      const SizedBox(width: 6),
+                      SizedBox(
+                        height: 40,
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            side: const BorderSide(color: Color(0xFFFECACA)),
+                            backgroundColor: const Color(0xFFFEF2F2),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
+                          ),
+                          onPressed: () => setState(() {
+                            _dispatchHistoryDateFilter = null;
+                            _dispatchHistoryFocusedDate = DateTime.now();
+                          }),
+                          child: const Text('Reset',
+                              style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.errorCrimson)),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 10),
+                // Shift chips
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildDispatchShiftChip('ALL', 'All Shifts'),
+                      const SizedBox(width: 6),
+                      _buildDispatchShiftChip('AM', 'AM Shift'),
+                      const SizedBox(width: 6),
+                      _buildDispatchShiftChip('PM', 'PM Shift'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // ── Legend ───────────────────────────────────────────────────────────
+          Row(
+            children: [
+              _legendDot(AppColors.commuterTeal, '$_coopName unit'),
+              const SizedBox(width: 14),
+              _legendDot(AppColors.textMuted, 'Other cooperative'),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // ── Log list ─────────────────────────────────────────────────────────
+          if (filtered.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32.0),
+                child: Column(
+                  children: [
+                    Icon(Icons.history_rounded,
+                        size: 48,
+                        color: AppColors.textMuted.withOpacity(0.4)),
+                    const SizedBox(height: 10),
+                    const Text('No dispatch records found',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14.5,
+                            color: AppColors.darkSlate)),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Dispatches across all your authorized routes will appear here.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            ...groupedLogs.entries.map((entry) {
+              final dateKey = entry.key;
+              final groupDate = groupDateMap[dateKey]!;
+              final logsForDay = entry.value;
+
+              // Format date header
+              final now = DateTime.now();
+              final isToday = groupDate.year == now.year &&
+                  groupDate.month == now.month &&
+                  groupDate.day == now.day;
+              final months = [
+                '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+              ];
+              final dateLabel = isToday
+                  ? 'Today'
+                  : '${months[groupDate.month]} ${groupDate.day}, ${groupDate.year}';
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding:
+                        const EdgeInsets.only(top: 6, bottom: 8, left: 2),
+                    child: Row(
+                      children: [
+                        Text(
+                          dateLabel,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.darkSlate,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '${logsForDay.length} dispatches',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1D4ED8),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ...logsForDay.map((log) {
+                    final vehicleId =
+                        (log['vehicle_id'] ?? 'Unknown').toString();
+                    final normalizedVid = _normalizePlate(vehicleId);
+                    final isOwnUnit = coopVehicleIds.contains(normalizedVid);
+                    final passengers = log['passenger_count'] ?? 0;
+                    final dispatcherName =
+                        (log['dispatcher_name'] ?? 'Dispatcher').toString();
+                    final routeId =
+                        (log['route_id'] ?? '').toString();
+                    final Timestamp? ts =
+                        log['dispatched_at'] as Timestamp?;
+                    final timeStr = ts != null
+                        ? '${ts.toDate().toLocal().hour.toString().padLeft(2, '0')}:${ts.toDate().toLocal().minute.toString().padLeft(2, '0')}'
+                        : '--:--';
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isOwnUnit
+                              ? AppColors.commuterTeal.withOpacity(0.45)
+                              : AppColors.borderSubtle,
+                          width: isOwnUnit ? 1.4 : 1.0,
+                        ),
+                        boxShadow: const [
+                          BoxShadow(
+                              color: Color(0x04000000),
+                              blurRadius: 4,
+                              offset: Offset(0, 1.5))
+                        ],
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            // ── Ownership dot ──────────────────────────────
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: isOwnUnit
+                                    ? AppColors.commuterTeal.withOpacity(0.12)
+                                    : AppColors.backgroundSlate,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(
+                                isOwnUnit
+                                    ? Icons.directions_bus_rounded
+                                    : Icons.directions_bus_outlined,
+                                size: 18,
+                                color: isOwnUnit
+                                    ? AppColors.commuterTeal
+                                    : AppColors.textMuted,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            // ── Info ──────────────────────────────────────
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          vehicleId
+                                              .replaceAll('_', ' ')
+                                              .toUpperCase(),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w800,
+                                            color: isOwnUnit
+                                                ? AppColors.darkSlate
+                                                : AppColors.textMuted,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      // ── DISPATCHED badge ──────────────
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 5, vertical: 1.5),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFEFF6FF),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                        child: const Text(
+                                          'DISPATCHED',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w900,
+                                            color: Color(0xFF1D4ED8),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      // ── Ownership badge ───────────────
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 5, vertical: 1.5),
+                                        decoration: BoxDecoration(
+                                          color: isOwnUnit
+                                              ? AppColors.commuterTeal
+                                                  .withOpacity(0.10)
+                                              : const Color(0xFFF1F5F9),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          isOwnUnit ? 'OUR UNIT' : 'OTHER COOP',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w900,
+                                            color: isOwnUnit
+                                                ? AppColors.commuterTeal
+                                                : AppColors.textMuted,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'By $dispatcherName • $passengers passengers • ${_formatRouteName(routeId)}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.textMuted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // ── Time ─────────────────────────────────────
+                            Text(
+                              timeStr,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 14,
+                                color: isOwnUnit
+                                    ? AppColors.commuterTeal
+                                    : AppColors.primaryNavy,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              );
+            }),
+        ],
+      );
+    });
+  }
+
+  Widget _buildDispatchShiftChip(String value, String label) {
+    final bool active = _dispatchHistoryShiftFilter == value;
+    return GestureDetector(
+      onTap: () => setState(() => _dispatchHistoryShiftFilter = value),
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? AppColors.commuterTeal : AppColors.backgroundSlate,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: active
+                ? AppColors.commuterTeal
+                : AppColors.borderSubtle,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.bold,
+            color: active ? Colors.white : AppColors.darkSlate,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDispatchDateStepper() {
+    final now = DateTime.now();
+    final focused = _dispatchHistoryFocusedDate;
+    final isToday = focused.year == now.year &&
+        focused.month == now.month &&
+        focused.day == now.day;
+    final months = [
+      '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final label = _dispatchHistoryDateFilter == null
+        ? 'All dates'
+        : isToday
+            ? 'Today'
+            : '${months[focused.month]} ${focused.day}';
+
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.borderSubtle, width: 1.2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.chevron_left_rounded,
+                size: 18, color: AppColors.primaryNavy),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28),
+            tooltip: 'Previous day',
+            onPressed: _dispatchHistoryDateFilter == null
+                ? null
+                : () {
+                    final prev = focused.subtract(const Duration(days: 1));
+                    setState(() {
+                      _dispatchHistoryFocusedDate = prev;
+                      _dispatchHistoryDateFilter = prev;
+                    });
+                  },
+          ),
+          InkWell(
+            onTap: () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: focused,
+                firstDate: DateTime(2025),
+                lastDate: now,
+              );
+              if (picked != null && mounted) {
+                setState(() {
+                  _dispatchHistoryFocusedDate = picked;
+                  _dispatchHistoryDateFilter = picked;
+                });
+              }
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w900,
+                  color: _dispatchHistoryDateFilter == null
+                      ? AppColors.textMuted
+                      : isToday
+                          ? const Color(0xFF059669)
+                          : AppColors.darkSlate,
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right_rounded,
+                size: 18, color: AppColors.primaryNavy),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28),
+            tooltip: 'Next day',
+            onPressed: (_dispatchHistoryDateFilter == null || isToday)
+                ? null
+                : () {
+                    final next = focused.add(const Duration(days: 1));
+                    setState(() {
+                      _dispatchHistoryFocusedDate = next;
+                      _dispatchHistoryDateFilter = next;
+                    });
+                  },
+          ),
+        ],
+      ),
+    );
+  }
+
   // ===========================================================================
   // TAB 5: QUEUE AUDITS
   // ===========================================================================
@@ -6358,10 +7679,11 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
     return Column(
       children: [
         _segmentBar(
-          labels: const ['Passenger complaints', 'Queue changes'],
+          labels: const ['Passenger complaints', 'Queue changes', 'Dispatch history'],
           icons: const [
             Icons.report_problem_rounded,
-            Icons.swap_vert_circle_rounded
+            Icons.swap_vert_circle_rounded,
+            Icons.history_rounded,
           ],
           index: _reportsSegment,
           onChanged: (i) => setState(() => _reportsSegment = i),
@@ -6369,7 +7691,9 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
         Expanded(
           child: _reportsSegment == 0
               ? _buildComplaintsTab()
-              : _buildQueueAuditsTab(),
+              : _reportsSegment == 1
+                  ? _buildQueueAuditsTab()
+                  : _buildDispatchHistoryTab(),
         ),
       ],
     );
@@ -7816,5 +9140,82 @@ class _LicenseOcrParser {
       }
     }
     return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Helper: merges Firestore snapshots from multiple dispatch_logs route queries
+// into a single flat list passed to its builder. Shows a loading spinner until
+// all routes have resolved at least once; then re-renders whenever any route
+// updates.
+// ---------------------------------------------------------------------------
+class _DispatchHistoryMerger extends StatefulWidget {
+  final List<String> routeIds;
+  final Stream<QuerySnapshot> Function(String routeId) streamForRoute;
+  final Widget Function(BuildContext context, List<QueryDocumentSnapshot> docs) builder;
+
+  const _DispatchHistoryMerger({
+    required this.routeIds,
+    required this.streamForRoute,
+    required this.builder,
+  });
+
+  @override
+  State<_DispatchHistoryMerger> createState() => _DispatchHistoryMergerState();
+}
+
+class _DispatchHistoryMergerState extends State<_DispatchHistoryMerger> {
+  final Map<String, List<QueryDocumentSnapshot>> _routeDocs = {};
+  final List<StreamSubscription<QuerySnapshot>> _subs = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _subscribe();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DispatchHistoryMerger old) {
+    super.didUpdateWidget(old);
+    if (old.routeIds.join(',') != widget.routeIds.join(',')) {
+      _cancel();
+      _subscribe();
+    }
+  }
+
+  void _subscribe() {
+    for (final routeId in widget.routeIds) {
+      final sub = widget.streamForRoute(routeId).listen((snap) {
+        if (!mounted) return;
+        setState(() => _routeDocs[routeId] = snap.docs);
+      });
+      _subs.add(sub);
+    }
+  }
+
+  void _cancel() {
+    for (final s in _subs) {
+      s.cancel();
+    }
+    _subs.clear();
+    _routeDocs.clear();
+  }
+
+  @override
+  void dispose() {
+    _cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Show spinner until every route has emitted at least one snapshot.
+    if (_routeDocs.length < widget.routeIds.length) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.commuterTeal),
+      );
+    }
+    final allDocs = _routeDocs.values.expand((docs) => docs).toList();
+    return widget.builder(context, allDocs);
   }
 }
