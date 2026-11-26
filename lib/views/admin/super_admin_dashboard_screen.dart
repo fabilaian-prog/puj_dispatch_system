@@ -2246,10 +2246,15 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
               final status = (m['status'] ?? 'PENDING_VERIFICATION')
                   .toString()
                   .toUpperCase();
+              final ltfrbStatus = (m['ltfrb_status'] ?? 'PENDING')
+                  .toString()
+                  .toUpperCase();
               final latestNote = (m['latest_coop_comment'] ?? '').toString();
               final adminRuling = (m['admin_ruling'] ?? '').toString();
               final ts = (m['created_at'] as Timestamp?)?.toDate();
               final bool isEscalated = status == 'ESCALATED';
+
+              // Cooperative-side status pill
               final CoopTone tone = status.contains('RESOLVED')
                   ? CoopTone.success
                   : isEscalated
@@ -2260,6 +2265,16 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                   : isEscalated
                       ? 'Escalated'
                       : (status.contains('REVIEW') ? 'Under review' : 'Pending');
+
+              // LTFRB-side status pill — shown when admin has acted
+              final bool showLtfrbPill = ltfrbStatus != 'PENDING';
+              final (String ltfrbLabel, Color ltfrbFg, Color ltfrbBg) = switch (ltfrbStatus) {
+                'UNDER_LTFRB_REVIEW' => ('LTFRB Reviewing', const Color(0xFF1D4ED8), const Color(0xFFEFF6FF)),
+                'CLEARED'           => ('LTFRB Cleared',   const Color(0xFF059669), const Color(0xFFECFDF5)),
+                'SANCTIONED'        => ('Sanctioned',      const Color(0xFFB91C1C), const Color(0xFFFEF2F2)),
+                'DISMISSED'         => ('Case Dismissed',  const Color(0xFF475569), const Color(0xFFF1F5F9)),
+                _                   => ('LTFRB: $ltfrbStatus', const Color(0xFF6D28D9), const Color(0xFFF5F3FF)),
+              };
               return InkWell(
                 onTap: () => _showAdminComplaintDetailModal(doc),
                 borderRadius: BorderRadius.circular(14),
@@ -2292,6 +2307,22 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                                   fontWeight: FontWeight.w800,
                                   color: AppColors.darkSlate)),
                         ),
+                        if (showLtfrbPill) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: ltfrbBg,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: ltfrbFg.withOpacity(0.35)),
+                            ),
+                            child: Text(ltfrbLabel,
+                                style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: ltfrbFg)),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
                         CoopPill(statusLabel, tone: tone),
                       ],
                     ),
@@ -2796,6 +2827,30 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
     });
   }
 
+  /// Posts a notice directly to the driver whose vehicle the complaint is about.
+  Future<void> _postDriverNotice({
+    required String driverId,
+    required String driverName,
+    required String coopId,
+    required String title,
+    required String message,
+    String priority = 'URGENT',
+  }) async {
+    if (driverId.isEmpty) return;
+    await FirebaseFirestore.instance.collection('notices').add({
+      'cooperative_id': coopId,
+      'author_name': 'LTFRB Admin',
+      'title': title,
+      'message': message,
+      'priority': priority,
+      'target_mode': 'INDIVIDUAL',
+      'target_user_id': driverId,
+      'target_user_name': driverName,
+      'target_role': 'DRIVER',
+      'created_at': FieldValue.serverTimestamp(),
+    });
+  }
+
   /// Called when the admin taps a ruling chip. Performs the appropriate
   /// system action for each status beyond just writing the field.
   Future<void> _applyLtfrbRuling(
@@ -2855,6 +2910,18 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
           'ltfrb_updated_at': FieldValue.serverTimestamp(),
           'updated_at': FieldValue.serverTimestamp(),
         });
+        // Notify the driver directly
+        try {
+          await _postDriverNotice(
+            driverId: drv.id,
+            driverName: drv.name,
+            coopId: coopId,
+            title: 'LTFRB Sanction Issued Against You',
+            message:
+                'LTFRB has formally sanctioned you following a complaint regarding "$category" (plate: $plate). '
+                'A suspension has been applied. Please comply with all LTFRB directives.',
+          );
+        } catch (_) {}
         // Notify the cooperative
         try {
           await _postCoopNotice(
@@ -2884,6 +2951,21 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
           'ltfrb_updated_at': FieldValue.serverTimestamp(),
           'updated_at': FieldValue.serverTimestamp(),
         });
+        try {
+          final drv = await _resolveDriverFromPlate(plate);
+          if (drv != null) {
+            await _postDriverNotice(
+              driverId: drv.id,
+              driverName: drv.name,
+              coopId: coopId,
+              title: 'LTFRB Complaint Cleared — No Violation Found',
+              message:
+                  'LTFRB has completed its review of the complaint regarding "$category" (plate: $plate). '
+                  'No violation was found against you. No further action is required.',
+              priority: 'NORMAL',
+            );
+          }
+        } catch (_) {}
         try {
           await _postCoopNotice(
             coopId: coopId,
@@ -2915,6 +2997,21 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
           'updated_at': FieldValue.serverTimestamp(),
         });
         try {
+          final drv = await _resolveDriverFromPlate(plate);
+          if (drv != null) {
+            await _postDriverNotice(
+              driverId: drv.id,
+              driverName: drv.name,
+              coopId: coopId,
+              title: 'LTFRB Case Dismissed — No Action Taken',
+              message:
+                  'The complaint regarding "$category" (plate: $plate) has been dismissed by LTFRB. '
+                  'The case is now closed with no action taken against you.',
+              priority: 'NORMAL',
+            );
+          }
+        } catch (_) {}
+        try {
           await _postCoopNotice(
             coopId: coopId,
             coopName: coopName,
@@ -2943,6 +3040,21 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
           'ltfrb_updated_at': FieldValue.serverTimestamp(),
           'updated_at': FieldValue.serverTimestamp(),
         });
+        try {
+          final drv = await _resolveDriverFromPlate(plate);
+          if (drv != null) {
+            await _postDriverNotice(
+              driverId: drv.id,
+              driverName: drv.name,
+              coopId: coopId,
+              title: 'LTFRB Ruling Reset — Complaint Returned to Pending',
+              message:
+                  'LTFRB has reset the ruling on the complaint regarding "$category" (plate: $plate). '
+                  'The complaint has been returned to pending status.',
+              priority: 'NORMAL',
+            );
+          }
+        } catch (_) {}
         try {
           await _postCoopNotice(
             coopId: coopId,
@@ -2973,6 +3085,20 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
           'ltfrb_updated_at': FieldValue.serverTimestamp(),
           'updated_at': FieldValue.serverTimestamp(),
         });
+        try {
+          final drv = await _resolveDriverFromPlate(plate);
+          if (drv != null) {
+            await _postDriverNotice(
+              driverId: drv.id,
+              driverName: drv.name,
+              coopId: coopId,
+              title: 'LTFRB is Reviewing a Complaint Against You',
+              message:
+                  'LTFRB has taken over the review of the complaint regarding "$category" (plate: $plate). '
+                  'The complaint is currently under LTFRB review.',
+            );
+          }
+        } catch (_) {}
         try {
           await _postCoopNotice(
             coopId: coopId,
@@ -3020,7 +3146,7 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
     }
   }
 
-  Future<void> _adminForceResolve(String docId, String ruledBy) async {
+  Future<void> _adminForceResolve(String docId, String ruledBy, {String plate = '', String category = '', String coopId = '', String coopName = ''}) async {
     try {
       await FirebaseFirestore.instance.collection('complaints').doc(docId).update({
         'status': 'RESOLVED',
@@ -3029,6 +3155,36 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
         'admin_ruled_at': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),
       });
+      // Notify driver
+      try {
+        final drv = await _resolveDriverFromPlate(plate);
+        if (drv != null) {
+          await _postDriverNotice(
+            driverId: drv.id,
+            driverName: drv.name,
+            coopId: coopId,
+            title: 'Complaint Against You Resolved by LTFRB',
+            message:
+                'LTFRB has resolved the complaint regarding "$category" (plate: $plate). '
+                'The case has been closed.',
+            priority: 'NORMAL',
+          );
+        }
+      } catch (_) {}
+      // Notify coop
+      if (coopId.isNotEmpty) {
+        try {
+          await _postCoopNotice(
+            coopId: coopId,
+            coopName: coopName,
+            title: 'LTFRB Resolved Complaint — $plate',
+            message:
+                'LTFRB has resolved the complaint regarding "$category" (plate: $plate) '
+                'and marked it as cleared.',
+            priority: 'NORMAL',
+          );
+        } catch (_) {}
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -3582,7 +3738,12 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
                                         );
                                         if (confirm == true) {
                                           setModalState(() => isSaving = true);
-                                          await _adminForceResolve(doc.id, adminLabel);
+                                          await _adminForceResolve(doc.id, adminLabel,
+                                            plate: plate,
+                                            category: category,
+                                            coopId: coopId,
+                                            coopName: coopName,
+                                          );
                                           setModalState(() => isSaving = false);
                                           if (context.mounted) Navigator.pop(dialogContext);
                                         }

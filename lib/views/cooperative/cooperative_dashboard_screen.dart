@@ -5850,12 +5850,26 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
     final statusKey = _normalizeStatusKey((cData['status'] ?? 'PENDING_VERIFICATION').toString());
     final latestNote = (cData['latest_coop_comment'] ?? '').toString();
 
+    // LTFRB ruling pill
+    final ltfrbStatus = (cData['ltfrb_status'] ?? 'PENDING').toString().toUpperCase();
+    final showLtfrbPill = ltfrbStatus != 'PENDING';
+    final (String ltfrbLabel, Color ltfrbFg, Color ltfrbBg) = switch (ltfrbStatus) {
+      'UNDER_LTFRB_REVIEW' => ('LTFRB Reviewing', const Color(0xFF1D4ED8), const Color(0xFFEFF6FF)),
+      'CLEARED'            => ('LTFRB Cleared',   const Color(0xFF059669), const Color(0xFFECFDF5)),
+      'SANCTIONED'         => ('Sanctioned',       const Color(0xFFB91C1C), const Color(0xFFFEF2F2)),
+      'DISMISSED'          => ('Case Dismissed',   const Color(0xFF475569), const Color(0xFFF1F5F9)),
+      _                    => ('LTFRB: $ltfrbStatus', const Color(0xFF6D28D9), const Color(0xFFF5F3FF)),
+    };
+
     return Container(
       margin: inGrid ? EdgeInsets.zero : const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.borderSubtle),
+        border: Border.all(
+          color: showLtfrbPill ? ltfrbFg.withOpacity(0.3) : AppColors.borderSubtle,
+          width: showLtfrbPill ? 1.4 : 1,
+        ),
       ),
       child: InkWell(
         onTap: () => _showComplaintDetailModal(doc),
@@ -5873,6 +5887,29 @@ class _CooperativeDashboardScreenState extends State<CooperativeDashboardScreen>
                   _buildStatusDropdownPill(docId: doc.id, currentStatus: statusKey),
                 ],
               ),
+              if (showLtfrbPill) ...[
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: ltfrbBg,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: ltfrbFg.withOpacity(0.35)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.gavel_rounded, size: 11, color: ltfrbFg),
+                      const SizedBox(width: 4),
+                      Text(ltfrbLabel,
+                          style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              color: ltfrbFg)),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 6),
               Text(desc, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, color: AppColors.darkSlate)),
 
